@@ -22,10 +22,69 @@ pub struct LandOptions {
     /// --cherry-pick
     #[clap(long)]
     cherry_pick: bool,
+
+    /// Land all approved PRs in the branch from bottom to top, stopping at
+    /// the first that cannot be landed.
+    #[clap(long, short = 'a')]
+    all: bool,
 }
 
 pub async fn land(
     opts: LandOptions,
+    git: &crate::git::Git,
+    gh: &mut crate::github::GitHub,
+    config: &crate::config::Config,
+) -> Result<()> {
+    if !opts.all {
+        return land_one(opts.cherry_pick, git, gh, config).await;
+    }
+
+    // --all: land commits from bottom to top
+    let mut landed = 0u32;
+    loop {
+        let prepared_commits = gh.get_prepared_commits()?;
+        if prepared_commits.is_empty() {
+            break;
+        }
+
+        // Find the first (bottom) commit that has a PR
+        let first_with_pr = prepared_commits
+            .iter()
+            .find(|pc| pc.pull_request_number.is_some());
+
+        if first_with_pr.is_none() {
+            break;
+        }
+
+        // Try landing with cherry_pick since there may be commits above
+        match land_one(true, git, gh, config).await {
+            Ok(()) => {
+                landed += 1;
+            }
+            Err(e) => {
+                if landed == 0 {
+                    return Err(e);
+                }
+                // Landed some but hit a blocker — that's fine
+                crate::output::output_essential(&format!(
+                    "landed {} PR(s), stopped: {}",
+                    landed, e
+                ))?;
+                return Ok(());
+            }
+        }
+    }
+
+    if landed > 0 {
+        crate::output::output_essential(&format!("landed {} PR(s)", landed))?;
+    } else {
+        crate::output::output_essential("nothing to land")?;
+    }
+    Ok(())
+}
+
+async fn land_one(
+    cherry_pick: bool,
     git: &crate::git::Git,
     gh: &mut crate::github::GitHub,
     config: &crate::config::Config,
@@ -35,7 +94,7 @@ pub async fn land(
 
     let based_on_unlanded_commits = prepared_commits.len() > 1;
 
-    if based_on_unlanded_commits && !opts.cherry_pick {
+    if based_on_unlanded_commits && !cherry_pick {
         return Err(Error::msg(formatdoc!(
             "Cannot land a commit whose parent is not on {master}. To land \
              this commit, rebase it so that it is a direct child of {master}.
@@ -276,7 +335,11 @@ pub async fn land(
             octocrab::instance()
                 .pulls(&config.owner, &config.repo)
                 .merge(pull_request_number)
-                .method(octocrab::params::pulls::MergeMethod::Squash)
+                .method(match config.merge_method {
+                    crate::config::MergeMethod::Squash => octocrab::params::pulls::MergeMethod::Squash,
+                    crate::config::MergeMethod::Rebase => octocrab::params::pulls::MergeMethod::Rebase,
+                    crate::config::MergeMethod::Merge => octocrab::params::pulls::MergeMethod::Merge,
+                })
                 .title(pull_request.title)
                 .message(build_github_body_for_merging(&pull_request.sections))
                 .sha(format!("{}", pr_head_oid))
