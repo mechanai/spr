@@ -5,7 +5,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-
 use unicode_normalization::UnicodeNormalization;
 
 pub fn slugify(s: &str) -> String {

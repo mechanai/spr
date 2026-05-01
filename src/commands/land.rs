@@ -336,9 +336,15 @@ async fn land_one(
                 .pulls(&config.owner, &config.repo)
                 .merge(pull_request_number)
                 .method(match config.merge_method {
-                    crate::config::MergeMethod::Squash => octocrab::params::pulls::MergeMethod::Squash,
-                    crate::config::MergeMethod::Rebase => octocrab::params::pulls::MergeMethod::Rebase,
-                    crate::config::MergeMethod::Merge => octocrab::params::pulls::MergeMethod::Merge,
+                    crate::config::MergeMethod::Squash => {
+                        octocrab::params::pulls::MergeMethod::Squash
+                    }
+                    crate::config::MergeMethod::Rebase => {
+                        octocrab::params::pulls::MergeMethod::Rebase
+                    }
+                    crate::config::MergeMethod::Merge => {
+                        octocrab::params::pulls::MergeMethod::Merge
+                    }
                 })
                 .title(pull_request.title)
                 .message(build_github_body_for_merging(&pull_request.sections))

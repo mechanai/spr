@@ -30,7 +30,10 @@ pub async fn sync(
     git.check_no_uncommitted_changes()?;
 
     // Fetch current master from upstream
-    output("🔄", &format!("Fetching {}", config.master_ref.branch_name()))?;
+    output(
+        "🔄",
+        &format!("Fetching {}", config.master_ref.branch_name()),
+    )?;
     let new_master_oid =
         gh.remote().fetch_branch(config.master_ref.branch_name())?;
 
@@ -57,7 +60,9 @@ pub async fn sync(
         )?;
 
         git.rebase_commits(&mut prepared_commits, new_master_oid)
-            .wrap_err("Rebase failed — please rebase manually and run spr diff --all")?;
+            .wrap_err(
+                "Rebase failed — please rebase manually and run spr diff --all",
+            )?;
 
         output_essential(&format!(
             "rebased {} commit(s)",

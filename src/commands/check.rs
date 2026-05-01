@@ -7,10 +7,7 @@
 
 use color_eyre::eyre::{Result, eyre};
 
-use crate::{
-    message::validate_commit_message,
-    output::output_essential,
-};
+use crate::{message::validate_commit_message, output::output_essential};
 
 #[derive(Debug, clap::Parser)]
 pub struct CheckOptions {

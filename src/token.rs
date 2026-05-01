@@ -72,11 +72,7 @@ fn gh_hosts_path() -> Option<PathBuf> {
         .or_else(|| dirs_path().map(|home| home.join(".config")))?;
 
     let path = config_dir.join("gh").join("hosts.yml");
-    if path.exists() {
-        Some(path)
-    } else {
-        None
-    }
+    if path.exists() { Some(path) } else { None }
 }
 
 fn dirs_path() -> Option<PathBuf> {

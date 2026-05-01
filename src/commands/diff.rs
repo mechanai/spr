@@ -10,17 +10,17 @@ use std::iter::zip;
 
 use color_eyre::eyre::{Error, Result, WrapErr as _, bail, eyre};
 
-    use crate::{
-        git::PreparedCommit,
-        git_remote::PushSpec,
-        github::{
-            GitHub, PullRequest, PullRequestRequestReviewers, PullRequestState,
-            PullRequestUpdate,
-        },
-        message::{MessageSection, validate_commit_message},
-        output::{output, output_essential, write_commit_title},
-        utils::{parse_name_list, remove_all_parens, slugify},
-    };
+use crate::{
+    git::PreparedCommit,
+    git_remote::PushSpec,
+    github::{
+        GitHub, PullRequest, PullRequestRequestReviewers, PullRequestState,
+        PullRequestUpdate,
+    },
+    message::{MessageSection, validate_commit_message},
+    output::{output, output_essential, write_commit_title},
+    utils::{parse_name_list, remove_all_parens, slugify},
+};
 use git2::Oid;
 use indoc::{formatdoc, indoc};
 
@@ -167,7 +167,9 @@ pub async fn diff(
     let stack_info = if prepared_commits.len() > 1 {
         let mut lines = vec!["**Stack:**".to_string()];
         for pc in prepared_commits.iter().rev() {
-            let title = pc.message.get(&MessageSection::Title)
+            let title = pc
+                .message
+                .get(&MessageSection::Title)
                 .map(|s| s.as_str())
                 .unwrap_or("(untitled)");
             if let Some(number) = pc.pull_request_number {
@@ -366,42 +368,50 @@ async fn diff_impl(
             let mut checked_reviewers = Vec::new();
 
             for reviewer in reviewers_list {
-            // Teams are indicated with a leading #
-            if let Some(slug) = reviewer.strip_prefix('#') {
-                if let Ok(team) =
-                    GitHub::get_github_team((&config.owner).into(), slug.into())
-                        .await
-                {
-                    requested_reviewers
-                        .team_reviewers
-                        .push(team.slug.to_string());
+                // Teams are indicated with a leading #
+                if let Some(slug) = reviewer.strip_prefix('#') {
+                    if let Ok(team) = GitHub::get_github_team(
+                        (&config.owner).into(),
+                        slug.into(),
+                    )
+                    .await
+                    {
+                        requested_reviewers
+                            .team_reviewers
+                            .push(team.slug.to_string());
 
-                    checked_reviewers.push(reviewer);
+                        checked_reviewers.push(reviewer);
+                    } else {
+                        bail!(
+                            "Reviewers field contains unknown team '{}'",
+                            reviewer,
+                        );
+                    }
+                } else if let Ok(user) =
+                    GitHub::get_github_user(reviewer.clone()).await
+                {
+                    requested_reviewers.reviewers.push(user.login);
+                    if let Some(name) = user.name {
+                        checked_reviewers.push(format!(
+                            "{} ({})",
+                            reviewer.clone(),
+                            remove_all_parens(&name)
+                        ));
+                    } else {
+                        checked_reviewers.push(reviewer);
+                    }
                 } else {
                     bail!(
-                        "Reviewers field contains unknown team '{}'",
-                        reviewer,
+                        "Reviewers field contains unknown user '{}'",
+                        reviewer
                     );
                 }
-            } else if let Ok(user) =
-                GitHub::get_github_user(reviewer.clone()).await
-            {
-                requested_reviewers.reviewers.push(user.login);
-                if let Some(name) = user.name {
-                    checked_reviewers.push(format!(
-                        "{} ({})",
-                        reviewer.clone(),
-                        remove_all_parens(&name)
-                    ));
-                } else {
-                    checked_reviewers.push(reviewer);
-                }
-            } else {
-                bail!("Reviewers field contains unknown user '{}'", reviewer);
             }
-        }
 
-        message.insert(MessageSection::Reviewers, checked_reviewers.join(", "));
+            message.insert(
+                MessageSection::Reviewers,
+                checked_reviewers.join(", "),
+            );
         }
     }
 
@@ -799,9 +809,7 @@ async fn diff_impl(
 
         // Apply labels
         if !opts.label.is_empty() {
-            let result = gh
-                .add_labels(pull_request_number, &opts.label)
-                .await;
+            let result = gh.add_labels(pull_request_number, &opts.label).await;
             if let Err(report) = result {
                 output("⚠️", "Adding labels failed")?;
                 for message in report.chain() {

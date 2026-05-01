@@ -103,7 +103,9 @@ pub async fn spr() -> Result<()> {
     debug!("Started with command line: {:?}", cli);
 
     let quiet = cli.quiet
-        || std::env::var("SPR_QUIET").ok().is_some_and(|v| v == "1" || v == "true");
+        || std::env::var("SPR_QUIET")
+            .ok()
+            .is_some_and(|v| v == "1" || v == "true");
     spr::output::set_quiet(quiet);
 
     if let Some(path) = &cli.cd
@@ -177,18 +179,25 @@ pub async fn spr() -> Result<()> {
     };
 
     let non_interactive = cli.non_interactive
-        || std::env::var("SPR_NON_INTERACTIVE").ok().is_some_and(|v| v == "1" || v == "true");
+        || std::env::var("SPR_NON_INTERACTIVE")
+            .ok()
+            .is_some_and(|v| v == "1" || v == "true");
 
     let default_reviewers = git_config
         .get_string("spr.defaultReviewers")
         .ok()
-        .map(|s| s.split(',').map(|r| r.trim().to_string()).filter(|r| !r.is_empty()).collect())
+        .map(|s| {
+            s.split(',')
+                .map(|r| r.trim().to_string())
+                .filter(|r| !r.is_empty())
+                .collect()
+        })
         .unwrap_or_default();
 
     let merge_method = git_config
         .get_string("spr.mergeMethod")
         .ok()
-        .map(|s| spr::config::MergeMethod::from_str(&s))
+        .map(|s| spr::config::MergeMethod::parse(&s))
         .unwrap_or_default();
 
     let config = spr::config::Config::new(
