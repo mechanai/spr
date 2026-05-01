@@ -5,11 +5,28 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use color_eyre::eyre::Result;
 
 use crate::{git::PreparedCommit, message::MessageSection};
 
+static QUIET: AtomicBool = AtomicBool::new(false);
+
+/// Set quiet mode globally. When quiet, only essential output is printed.
+pub fn set_quiet(quiet: bool) {
+    QUIET.store(quiet, Ordering::Relaxed);
+}
+
+pub fn is_quiet() -> bool {
+    QUIET.load(Ordering::Relaxed)
+}
+
 pub fn output(icon: &str, text: &str) -> Result<()> {
+    if is_quiet() {
+        return Ok(());
+    }
+
     let term = console::Term::stdout();
 
     let bullet = format!("  {}  ", icon);
@@ -26,7 +43,18 @@ pub fn output(icon: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
+/// Print essential output that is always shown, even in quiet mode.
+/// Used for PR URLs, numbers, and other machine-relevant data.
+pub fn output_essential(text: &str) -> Result<()> {
+    println!("{}", text);
+    Ok(())
+}
+
 pub fn write_commit_title(prepared_commit: &PreparedCommit) -> Result<()> {
+    if is_quiet() {
+        return Ok(());
+    }
+
     let term = console::Term::stdout();
     term.write_line(&format!(
         "{} {}",

@@ -12,4 +12,5 @@ pub mod git_remote;
 pub mod github;
 pub mod message;
 pub mod output;
+pub mod token;
 pub mod utils;

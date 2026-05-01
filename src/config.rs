@@ -9,6 +9,24 @@ use color_eyre::eyre::Result;
 
 use crate::github::GitHubBranch;
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum MergeMethod {
+    #[default]
+    Squash,
+    Rebase,
+    Merge,
+}
+
+impl MergeMethod {
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "rebase" => Self::Rebase,
+            "merge" => Self::Merge,
+            _ => Self::Squash,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub owner: String,
@@ -18,6 +36,10 @@ pub struct Config {
     pub auth_token: String,
     pub require_approval: bool,
     pub require_test_plan: bool,
+    pub create_draft_prs: bool,
+    pub non_interactive: bool,
+    pub default_reviewers: Vec<String>,
+    pub merge_method: MergeMethod,
 }
 
 impl Config {
@@ -30,6 +52,10 @@ impl Config {
         auth_token: String,
         require_approval: bool,
         require_test_plan: bool,
+        create_draft_prs: bool,
+        non_interactive: bool,
+        default_reviewers: Vec<String>,
+        merge_method: MergeMethod,
     ) -> Self {
         let master_ref =
             GitHubBranch::new_from_branch_name(&master_branch, &master_branch);
@@ -41,6 +67,10 @@ impl Config {
             auth_token,
             require_approval,
             require_test_plan,
+            create_draft_prs,
+            non_interactive,
+            default_reviewers,
+            merge_method,
         }
     }
 
@@ -106,6 +136,10 @@ mod tests {
             "xyz".into(),
             false,
             true,
+            false,
+            false,
+            vec![],
+            MergeMethod::Squash,
         )
     }
 
