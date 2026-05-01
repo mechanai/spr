@@ -217,4 +217,21 @@ mod tests {
             Some(123)
         );
     }
+
+    #[test]
+    fn test_short_pr_ref() {
+        let gh = config_factory();
+        assert_eq!(gh.short_pr_ref(42), "acme/codez#42");
+    }
+
+    #[test]
+    fn test_merge_method_parse() {
+        assert_eq!(MergeMethod::parse("squash"), MergeMethod::Squash);
+        assert_eq!(MergeMethod::parse("rebase"), MergeMethod::Rebase);
+        assert_eq!(MergeMethod::parse("merge"), MergeMethod::Merge);
+        assert_eq!(MergeMethod::parse("SQUASH"), MergeMethod::Squash);
+        assert_eq!(MergeMethod::parse("Rebase"), MergeMethod::Rebase);
+        assert_eq!(MergeMethod::parse("unknown"), MergeMethod::Squash);
+        assert_eq!(MergeMethod::parse(""), MergeMethod::Squash);
+    }
 }

@@ -70,3 +70,18 @@ pub fn write_commit_title(prepared_commit: &PreparedCommit) -> Result<()> {
     ))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quiet_mode_toggle() {
+        set_quiet(false);
+        assert!(!is_quiet());
+        set_quiet(true);
+        assert!(is_quiet());
+        set_quiet(false);
+        assert!(!is_quiet());
+    }
+}
