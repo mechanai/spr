@@ -353,7 +353,13 @@ impl GitHub {
         base_ref_name: String,
         head_ref_name: String,
         draft: bool,
+        stack_info: Option<&str>,
     ) -> Result<u64> {
+        let mut body = build_github_body(message);
+        if let Some(info) = stack_info {
+            body.push_str("\n\n---\n");
+            body.push_str(info);
+        }
         let number = octocrab::instance()
             .pulls(self.config.owner.clone(), self.config.repo.clone())
             .create(
@@ -363,7 +369,7 @@ impl GitHub {
                 head_ref_name,
                 base_ref_name,
             )
-            .body(build_github_body(message))
+            .body(body)
             .draft(Some(draft))
             .send()
             .await?

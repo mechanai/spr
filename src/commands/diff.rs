@@ -57,6 +57,10 @@ pub struct DiffOptions {
     /// on any intermediate changes between the master branch and this commit.
     #[clap(long)]
     pub cherry_pick: bool,
+
+    /// Maximum number of commits to process (from HEAD backwards)
+    #[clap(long, short = 'n')]
+    pub count: Option<usize>,
 }
 
 fn get_oids(refs: &str, repo: &git2::Repository) -> Result<HashSet<Oid>> {
@@ -117,7 +121,13 @@ pub async fn diff(
             bail!("Do not use --refs with --all");
         }
         (None, true) => {
-            // Operate on all commits
+            // Operate on all commits (possibly limited by --count)
+            if let Some(count) = opts.count {
+                let len = prepared_commits.len();
+                if count < len {
+                    prepared_commits.drain(0..len - count);
+                }
+            }
             None
         }
         (None, false) => {
@@ -152,6 +162,24 @@ pub async fn diff(
         .collect();
 
     let mut message_on_prompt = "".to_string();
+
+    // Build stack info for PR body (only if multiple commits)
+    let stack_info = if prepared_commits.len() > 1 {
+        let mut lines = vec!["**Stack:**".to_string()];
+        for pc in prepared_commits.iter().rev() {
+            let title = pc.message.get(&MessageSection::Title)
+                .map(|s| s.as_str())
+                .unwrap_or("(untitled)");
+            if let Some(number) = pc.pull_request_number {
+                lines.push(format!("- #{} {}", number, title));
+            } else {
+                lines.push(format!("- ⏳ {}", title));
+            }
+        }
+        Some(lines.join("\n"))
+    } else {
+        None
+    };
 
     for (prepared_commit, pull_request_task) in
         zip(prepared_commits.iter_mut(), pull_request_tasks.into_iter())
@@ -210,6 +238,7 @@ pub async fn diff(
             prepared_commit,
             master_base_oid,
             pull_request,
+            stack_info.as_deref(),
         )
         .await;
     }
@@ -231,6 +260,7 @@ async fn diff_impl(
     local_commit: &mut PreparedCommit,
     master_base_oid: Oid,
     pull_request: Option<PullRequest>,
+    stack_info: Option<&str>,
 ) -> Result<()> {
     // Parsed commit message of the local commit
     let message = &mut local_commit.message;
@@ -733,6 +763,7 @@ async fn diff_impl(
                     .to_string(),
                 pull_request_branch.branch_name().to_string(),
                 opts.draft || config.create_draft_prs,
+                stack_info,
             )
             .await?;
 
@@ -745,7 +776,11 @@ async fn diff_impl(
                 pull_request_number, &pull_request_url,
             ),
         )?;
-        output_essential(&pull_request_url)?;
+        output_essential(&format!(
+            "{} {}",
+            config.short_pr_ref(pull_request_number),
+            &pull_request_url,
+        ))?;
 
         message.insert(MessageSection::PullRequest, pull_request_url);
 

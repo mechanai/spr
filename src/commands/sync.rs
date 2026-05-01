@@ -77,6 +77,7 @@ pub async fn sync(
             refs: None,
             cherry_pick: false,
             label: vec![],
+            count: None,
         };
 
         crate::commands::diff::diff(diff_opts, git, gh, config).await?;

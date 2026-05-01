@@ -82,6 +82,10 @@ impl Config {
         )
     }
 
+    pub fn short_pr_ref(&self, number: u64) -> String {
+        format!("{}/{}#{}", &self.owner, &self.repo, number)
+    }
+
     pub fn parse_pull_request_field(&self, text: &str) -> Option<u64> {
         if text.is_empty() {
             return None;
