@@ -10,17 +10,17 @@ use std::iter::zip;
 
 use color_eyre::eyre::{Error, Result, WrapErr as _, bail, eyre};
 
-use crate::{
-    git::PreparedCommit,
-    git_remote::PushSpec,
-    github::{
-        GitHub, PullRequest, PullRequestRequestReviewers, PullRequestState,
-        PullRequestUpdate,
-    },
-    message::{MessageSection, validate_commit_message},
-    output::{output, write_commit_title},
-    utils::{parse_name_list, remove_all_parens, slugify},
-};
+    use crate::{
+        git::PreparedCommit,
+        git_remote::PushSpec,
+        github::{
+            GitHub, PullRequest, PullRequestRequestReviewers, PullRequestState,
+            PullRequestUpdate,
+        },
+        message::{MessageSection, validate_commit_message},
+        output::{output, output_essential, write_commit_title},
+        utils::{parse_name_list, remove_all_parens, slugify},
+    };
 use git2::Oid;
 use indoc::{formatdoc, indoc};
 
@@ -28,31 +28,35 @@ use indoc::{formatdoc, indoc};
 pub struct DiffOptions {
     /// Create/update pull requests for the whole branch, not just the HEAD commit
     #[clap(long, short = 'a')]
-    all: bool,
+    pub all: bool,
 
     /// Update the pull request title and description on GitHub from the local
     /// commit message
     #[clap(long)]
-    update_message: bool,
+    pub update_message: bool,
 
     /// Submit any new Pull Request as a draft
     #[clap(long)]
-    draft: bool,
+    pub draft: bool,
+
+    /// Labels to apply to new Pull Requests (can be specified multiple times)
+    #[clap(long, short = 'l')]
+    pub label: Vec<String>,
 
     /// Message to be used for commits updating existing pull requests (e.g.
     /// 'rebase' or 'review comments')
     #[clap(long, short = 'm')]
-    message: Option<String>,
+    pub message: Option<String>,
 
     /// Which commits in the branch should be created/updated. This can be a
     /// revspec such as HEAD~4..HEAD~1 or just one commit like HEAD~7.
     #[clap(long, short = 'r')]
-    refs: Option<String>,
+    pub refs: Option<String>,
 
     /// Submit this commit as if it was cherry-picked on master. Do not base it
     /// on any intermediate changes between the master branch and this commit.
     #[clap(long)]
-    cherry_pick: bool,
+    pub cherry_pick: bool,
 }
 
 fn get_oids(refs: &str, repo: &git2::Repository) -> Result<HashSet<Oid>> {
@@ -173,6 +177,24 @@ pub async fn diff(
         };
 
         write_commit_title(prepared_commit)?;
+
+        // Skip WIP commits — don't create or update PRs for them
+        let title = prepared_commit
+            .message
+            .get(&MessageSection::Title)
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        if title.starts_with("WIP")
+            || title.starts_with("wip")
+            || title.starts_with("[WIP]")
+            || title.starts_with("[wip]")
+        {
+            // Only skip if there's no existing PR for this commit
+            if prepared_commit.pull_request_number.is_none() {
+                output("⏭️ ", "Skipping WIP commit")?;
+                continue;
+            }
+        }
 
         // The further implementation of the diff command is in a separate
         // function. This makes it easier to run the code to update the local
@@ -299,13 +321,21 @@ async fn diff_impl(
     // Parse "Reviewers" section, if this is a new Pull Request
     let mut requested_reviewers = PullRequestRequestReviewers::default();
 
-    if local_commit.pull_request_number.is_none()
-        && let Some(reviewers) = message.get(&MessageSection::Reviewers)
-    {
-        let reviewers = parse_name_list(reviewers);
-        let mut checked_reviewers = Vec::new();
+    if local_commit.pull_request_number.is_none() {
+        // Use commit message reviewers, or fall back to config default
+        let reviewers_text = message.get(&MessageSection::Reviewers).cloned();
+        let reviewers_list = if let Some(ref text) = reviewers_text {
+            parse_name_list(text)
+        } else if !config.default_reviewers.is_empty() {
+            config.default_reviewers.clone()
+        } else {
+            vec![]
+        };
 
-        for reviewer in reviewers {
+        if !reviewers_list.is_empty() {
+            let mut checked_reviewers = Vec::new();
+
+            for reviewer in reviewers_list {
             // Teams are indicated with a leading #
             if let Some(slug) = reviewer.strip_prefix('#') {
                 if let Ok(team) =
@@ -342,6 +372,7 @@ async fn diff_impl(
         }
 
         message.insert(MessageSection::Reviewers, checked_reviewers.join(", "));
+        }
     }
 
     // Get the name of the existing Pull Request branch, or constuct one if
@@ -550,25 +581,29 @@ async fn diff_impl(
 
     let mut github_commit_message = opts.message.clone();
     if pull_request.is_some() && github_commit_message.is_none() {
-        let input = {
-            let message_on_prompt = message_on_prompt.clone();
+        if config.non_interactive {
+            github_commit_message = Some("update".to_string());
+        } else {
+            let input = {
+                let message_on_prompt = message_on_prompt.clone();
 
-            tokio::task::spawn_blocking(move || {
-                dialoguer::Input::<String>::new()
-                    .with_prompt("Message (leave empty to abort)")
-                    .with_initial_text(message_on_prompt)
-                    .allow_empty(true)
-                    .interact_text()
-            })
-            .await??
-        };
+                tokio::task::spawn_blocking(move || {
+                    dialoguer::Input::<String>::new()
+                        .with_prompt("Message (leave empty to abort)")
+                        .with_initial_text(message_on_prompt)
+                        .allow_empty(true)
+                        .interact_text()
+                })
+                .await??
+            };
 
-        if input.is_empty() {
-            bail!("Aborted as per user request");
+            if input.is_empty() {
+                bail!("Aborted as per user request");
+            }
+
+            *message_on_prompt = input.clone();
+            github_commit_message = Some(input);
         }
-
-        *message_on_prompt = input.clone();
-        github_commit_message = Some(input);
     }
 
     // Construct the new commit for the Pull Request branch. First parent is the
@@ -697,7 +732,7 @@ async fn diff_impl(
                     .branch_name()
                     .to_string(),
                 pull_request_branch.branch_name().to_string(),
-                opts.draft,
+                opts.draft || config.create_draft_prs,
             )
             .await?;
 
@@ -710,6 +745,7 @@ async fn diff_impl(
                 pull_request_number, &pull_request_url,
             ),
         )?;
+        output_essential(&pull_request_url)?;
 
         message.insert(MessageSection::PullRequest, pull_request_url);
 
@@ -720,6 +756,19 @@ async fn diff_impl(
             Ok(()) => (),
             Err(report) => {
                 output("⚠️", "Requesting reviewers failed")?;
+                for message in report.chain() {
+                    output("  ", &message.to_string())?;
+                }
+            }
+        }
+
+        // Apply labels
+        if !opts.label.is_empty() {
+            let result = gh
+                .add_labels(pull_request_number, &opts.label)
+                .await;
+            if let Err(report) = result {
+                output("⚠️", "Adding labels failed")?;
                 for message in report.chain() {
                     output("  ", &message.to_string())?;
                 }

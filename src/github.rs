@@ -410,6 +410,21 @@ impl GitHub {
         Ok(())
     }
 
+    pub async fn add_labels(
+        &self,
+        number: u64,
+        labels: &[String],
+    ) -> Result<()> {
+        if labels.is_empty() {
+            return Ok(());
+        }
+        octocrab::instance()
+            .issues(&self.config.owner, &self.config.repo)
+            .add_labels(number, labels)
+            .await?;
+        Ok(())
+    }
+
     pub async fn get_pull_request_mergeability(
         &self,
         number: u64,
