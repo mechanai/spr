@@ -13,7 +13,6 @@ use clap::{Parser, Subcommand};
 use color_eyre::eyre::{Error, Result, eyre};
 use log::debug;
 use spr::commands;
-use spr::output;
 
 #[derive(Parser, Debug)]
 #[clap(
@@ -88,6 +87,15 @@ enum Commands {
 
     /// Close a Pull request
     Close(commands::close::CloseOptions),
+
+    /// Show status of the Pull Request for HEAD commit
+    Status(commands::status::StatusOptions),
+
+    /// Validate commit and check for conflicts without pushing
+    Check(commands::check::CheckOptions),
+
+    /// Rebase local branch onto upstream master and optionally update PRs
+    Sync(commands::sync::SyncOptions),
 }
 
 pub async fn spr() -> Result<()> {
@@ -96,7 +104,7 @@ pub async fn spr() -> Result<()> {
 
     let quiet = cli.quiet
         || std::env::var("SPR_QUIET").ok().is_some_and(|v| v == "1" || v == "true");
-    output::set_quiet(quiet);
+    spr::output::set_quiet(quiet);
 
     if let Some(path) = &cli.cd
         && let Err(err) = std::env::set_current_dir(path)
@@ -228,6 +236,15 @@ pub async fn spr() -> Result<()> {
         }
         Commands::Close(opts) => {
             commands::close::close(opts, &git, &mut gh, &config).await?
+        }
+        Commands::Status(opts) => {
+            commands::status::status(opts, &git, &mut gh, &config).await?
+        }
+        Commands::Check(opts) => {
+            commands::check::check(opts, &git, &mut gh, &config).await?
+        }
+        Commands::Sync(opts) => {
+            commands::sync::sync(opts, &git, &mut gh, &config).await?
         }
         Commands::Format(opts) => {
             commands::format::format(opts, &git, &mut gh, &config).await?

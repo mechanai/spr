@@ -6,6 +6,7 @@
  */
 
 pub mod amend;
+pub mod check;
 pub mod close;
 pub mod diff;
 pub mod format;
@@ -13,3 +14,5 @@ pub mod init;
 pub mod land;
 pub mod list;
 pub mod patch;
+pub mod status;
+pub mod sync;
