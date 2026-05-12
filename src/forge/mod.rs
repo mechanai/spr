@@ -5,6 +5,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+mod dry_run;
+pub use dry_run::DryRunForge;
+
 use std::collections::HashMap;
 
 use async_trait::async_trait;
