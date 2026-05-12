@@ -6,7 +6,9 @@
  */
 
 mod dry_run;
+mod verbose;
 pub use dry_run::DryRunForge;
+pub use verbose::VerboseForge;
 
 use std::collections::HashMap;
 
