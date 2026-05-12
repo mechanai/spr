@@ -349,8 +349,8 @@ impl GitHub {
     ) -> Result<u64> {
         let mut body = build_github_body(message);
         if let Some(info) = stack_info {
-            body.push_str("\n\n---\n");
-            body.push_str(info);
+            body.push_str("\n\n");
+            body.push_str(&crate::stack::wrap_with_markers(info));
         }
         let number = octocrab::instance()
             .pulls(self.config.owner.clone(), self.config.repo.clone())
@@ -581,9 +581,9 @@ impl ForgeApi for GitHub {
         &self,
         number: u64,
         update: &ChangeRequestUpdate,
-        _stack_info: Option<&str>,
+        stack_info: Option<&str>,
     ) -> Result<()> {
-        let pr_update = PullRequestUpdate {
+        let mut pr_update = PullRequestUpdate {
             title: update.title.clone(),
             body: update.body.clone(),
             base: update.base.clone(),
@@ -594,6 +594,23 @@ impl ForgeApi for GitHub {
                 }
             }),
         };
+
+        if let Some(info) = stack_info {
+            // If the update doesn't include a body, fetch the current PR body
+            // so stack markers are applied to the real body, not an empty string.
+            let current_body = match pr_update.body.take() {
+                Some(body) => body,
+                None => self
+                    .get_pull_request(number)
+                    .await
+                    .ok()
+                    .and_then(|pr| pr.body)
+                    .unwrap_or_default(),
+            };
+            pr_update.body =
+                Some(crate::stack::update_body_with_stack(&current_body, info));
+        }
+
         self.update_pull_request(number, pr_update).await
     }
 

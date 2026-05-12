@@ -162,10 +162,11 @@ pub async fn diff(
     let stack_info = if prepared_commits.len() > 1 {
         let mut lines = vec!["**Stack:**".to_string()];
         for pc in prepared_commits.iter().rev() {
-            let title = pc
+            let raw_title = pc
                 .message
                 .get(&MessageSection::Title)
                 .map_or("(untitled)", std::string::String::as_str);
+            let title = crate::stack::sanitize_title(raw_title);
             if let Some(number) = pc.pull_request_number {
                 lines.push(format!("- #{number} {title}"));
             } else {
