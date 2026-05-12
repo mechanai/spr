@@ -94,16 +94,7 @@ async fn close_impl(
 
     let base_is_master = config.is_master_branch(&change_request.base_ref_name);
 
-    let result = forge
-        .update_change_request(
-            pull_request_number,
-            &crate::forge::ChangeRequestUpdate {
-                state: Some(crate::forge::ChangeRequestState::Closed),
-                ..Default::default()
-            },
-            None,
-        )
-        .await;
+    let result = forge.close_change_request(pull_request_number).await;
 
     match result {
         Ok(()) => (),
