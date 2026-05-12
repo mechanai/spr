@@ -7,10 +7,7 @@
 
 use color_eyre::eyre::{Result, eyre};
 
-use crate::{
-    github::{GitHub, ReviewStatus},
-    output::output_essential,
-};
+use crate::output::output_essential;
 
 #[derive(Debug, clap::Parser)]
 pub struct StatusOptions {
@@ -25,11 +22,13 @@ pub struct StatusOptions {
 
 pub async fn status(
     opts: StatusOptions,
-    _git: &crate::git::Git,
-    gh: &mut GitHub,
+    git: &crate::git::Git,
+    forge: &dyn crate::forge::ForgeApi,
     config: &crate::config::Config,
 ) -> Result<()> {
-    let prepared_commits = gh.get_prepared_commits()?;
+    let remote_tip = forge.fetch_branch(config.master_branch_name())?;
+    let prepared_commits =
+        crate::forge::get_prepared_commits(git, config, remote_tip)?;
 
     if prepared_commits.is_empty() {
         return Err(eyre!("No commits on branch"));
@@ -56,16 +55,19 @@ pub async fn status(
             continue;
         };
 
-        let pr = gh.get_pull_request(pr_number).await?;
+        let pr = forge
+            .get_change_request(pr_number)
+            .await?
+            .ok_or_else(|| eyre!("PR #{} not found", pr_number))?;
 
         let review = match &pr.review_status {
-            Some(ReviewStatus::Approved) => "approved",
-            Some(ReviewStatus::Rejected) => "changes requested",
-            Some(ReviewStatus::Requested) => "review pending",
+            Some(crate::forge::ReviewStatus::Approved) => "approved",
+            Some(crate::forge::ReviewStatus::Rejected) => "changes requested",
+            Some(crate::forge::ReviewStatus::Requested) => "review pending",
             None => "no review",
         };
 
-        if pr.review_status != Some(ReviewStatus::Approved) {
+        if pr.review_status != Some(crate::forge::ReviewStatus::Approved) {
             all_ready = false;
         }
 

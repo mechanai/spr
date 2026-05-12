@@ -29,10 +29,13 @@ pub struct PatchOptions {
 pub async fn patch(
     opts: PatchOptions,
     git: &crate::git::Git,
-    gh: &mut crate::github::GitHub,
+    forge: &dyn crate::forge::ForgeApi,
     config: &crate::config::Config,
 ) -> Result<()> {
-    let pr = gh.get_pull_request(opts.pull_request).await?;
+    let pr = forge
+        .get_change_request(opts.pull_request)
+        .await?
+        .ok_or_else(|| color_eyre::eyre::eyre!("PR not found"))?;
     output(
         "#️⃣ ",
         &format!(
@@ -57,7 +60,7 @@ pub async fn patch(
     } else {
         // Current oid of the master branch
         let current_master_oid =
-            gh.remote().fetch_branch(config.master_branch_name())?;
+            forge.fetch_branch(config.master_branch_name())?;
 
         // The parent commit to base the new PR branch on shall be the master
         // commit this PR is based on

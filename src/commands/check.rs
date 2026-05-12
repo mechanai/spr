@@ -20,13 +20,15 @@ pub struct CheckOptions {
 pub async fn check(
     opts: CheckOptions,
     git: &crate::git::Git,
-    gh: &mut crate::github::GitHub,
+    forge: &dyn crate::forge::ForgeApi,
     config: &crate::config::Config,
 ) -> Result<()> {
     // Check for uncommitted changes
     git.check_no_uncommitted_changes()?;
 
-    let prepared_commits = gh.get_prepared_commits()?;
+    let remote_tip = forge.fetch_branch(config.master_branch_name())?;
+    let prepared_commits =
+        crate::forge::get_prepared_commits(git, config, remote_tip)?;
 
     let head_commit = prepared_commits
         .last()

@@ -24,7 +24,7 @@ pub struct SyncOptions {
 pub async fn sync(
     opts: SyncOptions,
     git: &crate::git::Git,
-    gh: &mut crate::github::GitHub,
+    forge: &dyn crate::forge::ForgeApi,
     config: &crate::config::Config,
 ) -> Result<()> {
     git.check_no_uncommitted_changes()?;
@@ -35,10 +35,11 @@ pub async fn sync(
         &format!("Fetching {}", config.master_branch_name()),
     )?;
     let new_master_oid =
-        gh.remote().fetch_branch(config.master_branch_name())?;
+        forge.fetch_branch(config.master_branch_name())?;
 
     // Get the prepared commits (these are the local commits above master)
-    let mut prepared_commits = gh.get_prepared_commits()?;
+    let mut prepared_commits =
+        crate::forge::get_prepared_commits(git, config, new_master_oid)?;
 
     if prepared_commits.is_empty() {
         output_essential("already up to date, no local commits")?;
@@ -85,7 +86,7 @@ pub async fn sync(
             count: None,
         };
 
-        crate::commands::diff::diff(diff_opts, git, gh, config).await?;
+        crate::commands::diff::diff(diff_opts, git, forge, config).await?;
     }
 
     Ok(())
