@@ -27,8 +27,7 @@ pub fn output(icon: &str, text: &str) -> Result<()> {
         return Ok(());
     }
 
-    let term = console::Term::stdout();
-
+    let term = console::Term::stderr();
     let bullet = format!("  {icon}  ");
     let indent = console::measure_text_width(&bullet);
     let indent_string = " ".repeat(indent);
@@ -55,7 +54,7 @@ pub fn write_commit_title(prepared_commit: &PreparedCommit) -> Result<()> {
         return Ok(());
     }
 
-    let term = console::Term::stdout();
+    let term = console::Term::stderr();
     term.write_line(&format!(
         "{} {}",
         console::style(&prepared_commit.short_id).italic(),
