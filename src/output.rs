@@ -29,7 +29,7 @@ pub fn output(icon: &str, text: &str) -> Result<()> {
 
     let term = console::Term::stdout();
 
-    let bullet = format!("  {}  ", icon);
+    let bullet = format!("  {icon}  ");
     let indent = console::measure_text_width(&bullet);
     let indent_string = " ".repeat(indent);
     let options = textwrap::Options::new((term.size().1 as usize) - indent * 2)
@@ -46,7 +46,7 @@ pub fn output(icon: &str, text: &str) -> Result<()> {
 /// Print essential output that is always shown, even in quiet mode.
 /// Used for PR URLs, numbers, and other machine-relevant data.
 pub fn output_essential(text: &str) -> Result<()> {
-    println!("{}", text);
+    println!("{text}");
     Ok(())
 }
 
@@ -63,8 +63,7 @@ pub fn write_commit_title(prepared_commit: &PreparedCommit) -> Result<()> {
             prepared_commit
                 .message
                 .get(&MessageSection::Title)
-                .map(|s| &s[..])
-                .unwrap_or("(untitled)"),
+                .map_or("(untitled)", |s| &s[..]),
         )
         .yellow()
     ))?;

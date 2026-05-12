@@ -19,6 +19,7 @@ use log::debug;
 /// Attempt to find a GitHub auth token from environment and gh CLI config.
 /// Returns `None` if no token is found from these sources (caller should
 /// fall back to git config).
+#[must_use]
 pub fn find_token(github_host: &str) -> Option<String> {
     if let Some(token) = from_env() {
         return Some(token);
@@ -79,7 +80,7 @@ fn dirs_path() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(PathBuf::from)
 }
 
-/// Parse the gh CLI hosts.yml to extract oauth_token for a given host.
+/// Parse the gh CLI hosts.yml to extract `oauth_token` for a given host.
 /// Handles the simple YAML structure without requiring a full YAML parser.
 fn parse_gh_hosts(contents: &str, github_host: &str) -> Option<String> {
     let mut in_host_block = false;
@@ -103,8 +104,7 @@ fn parse_gh_hosts(contents: &str, github_host: &str) -> Option<String> {
                 let token = token.trim().trim_matches('"').trim_matches('\'');
                 if !token.is_empty() {
                     debug!(
-                        "Using token from gh CLI config for host {}",
-                        github_host
+                        "Using token from gh CLI config for host {github_host}"
                     );
                     return Some(token.to_string());
                 }

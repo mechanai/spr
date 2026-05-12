@@ -18,6 +18,7 @@ pub enum MergeMethod {
 }
 
 impl MergeMethod {
+    #[must_use]
     pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "rebase" => Self::Rebase,
@@ -44,10 +45,11 @@ pub struct Config {
 
 impl Config {
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         owner: String,
         repo: String,
-        master_branch: String,
+        master_branch: &str,
         branch_prefix: String,
         auth_token: String,
         require_approval: bool,
@@ -58,7 +60,7 @@ impl Config {
         merge_method: MergeMethod,
     ) -> Self {
         let master_ref =
-            GitHubBranch::new_from_branch_name(&master_branch, &master_branch);
+            GitHubBranch::new_from_branch_name(master_branch, master_branch);
         Self {
             owner,
             repo,
@@ -74,6 +76,7 @@ impl Config {
         }
     }
 
+    #[must_use]
     pub fn pull_request_url(&self, number: u64) -> String {
         format!(
             "https://github.com/{owner}/{repo}/pull/{number}",
@@ -82,10 +85,12 @@ impl Config {
         )
     }
 
+    #[must_use]
     pub fn short_pr_ref(&self, number: u64) -> String {
         format!("{}/{}#{}", &self.owner, &self.repo, number)
     }
 
+    #[must_use]
     pub fn parse_pull_request_field(&self, text: &str) -> Option<u64> {
         if text.is_empty() {
             return None;
@@ -118,6 +123,7 @@ impl Config {
         GitHubBranch::new_from_ref(ghref, self.master_ref.branch_name())
     }
 
+    #[must_use]
     pub fn new_github_branch(&self, branch_name: &str) -> GitHubBranch {
         GitHubBranch::new_from_branch_name(
             branch_name,
@@ -135,7 +141,7 @@ mod tests {
         crate::config::Config::new(
             "acme".into(),
             "codez".into(),
-            "master".into(),
+            "master",
             "spr/foo/".into(),
             "xyz".into(),
             false,

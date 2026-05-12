@@ -40,8 +40,7 @@ pub async fn patch(
             pr.number,
             pr.sections
                 .get(&MessageSection::Title)
-                .map(|s| &s[..])
-                .unwrap_or("(no title)")
+                .map_or("(no title)", |s| &s[..])
         ),
     )?;
 
@@ -123,7 +122,7 @@ pub async fn patch(
     if !opts.no_checkout {
         // Check out the new branch
         repo.checkout_tree(patch_branch_commit.as_object(), None)?;
-        repo.set_head(&format!("refs/heads/{}", branch_name))?;
+        repo.set_head(&format!("refs/heads/{branch_name}"))?;
         output("✅", "Checked out")?;
     }
 

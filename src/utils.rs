@@ -7,6 +7,7 @@
 
 use unicode_normalization::UnicodeNormalization;
 
+#[must_use]
 pub fn slugify(s: &str) -> String {
     s.trim()
         .nfd()
@@ -29,12 +30,13 @@ pub fn parse_name_list(text: &str) -> Vec<String> {
     lazy_regex::regex!(r#"\(.*?\)"#)
         .replace_all(text, ",")
         .split(',')
-        .map(|name| name.trim())
+        .map(str::trim)
         .filter(|name| !name.is_empty())
         .map(String::from)
         .collect()
 }
 
+#[must_use]
 pub fn remove_all_parens(text: &str) -> String {
     lazy_regex::regex!(r#"[()]"#).replace_all(text, "").into()
 }

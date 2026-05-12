@@ -61,6 +61,7 @@ pub struct PullRequestUpdate {
 }
 
 impl PullRequestUpdate {
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.title.is_none()
             && self.body.is_none()
@@ -132,6 +133,7 @@ type GitObjectID = String;
 pub struct PullRequestMergeabilityQuery;
 
 impl GitHub {
+    #[must_use]
     pub fn new(
         config: crate::config::Config,
         git: crate::git::Git,
@@ -152,6 +154,7 @@ impl GitHub {
         }
     }
 
+    #[must_use]
     pub fn remote(&self) -> &GitRemote {
         &self.git_remote
     }
@@ -165,7 +168,7 @@ impl GitHub {
 
     pub async fn get_github_user(login: String) -> Result<UserWithName> {
         octocrab::instance()
-            .get::<UserWithName, _, _>(format!("/users/{}", login), None::<&()>)
+            .get::<UserWithName, _, _>(format!("/users/{login}"), None::<&()>)
             .await
             .map_err(Error::from)
     }
@@ -189,6 +192,7 @@ impl GitHub {
         let variables = pull_request_query::Variables {
             name: config.repo.clone(),
             owner: config.owner.clone(),
+            #[allow(clippy::cast_possible_wrap)]
             number: number as i64,
         };
         let request_body = PullRequestQuery::build_query(variables);
@@ -254,7 +258,7 @@ impl GitHub {
             .flat_map(|all_reviews| &all_reviews.nodes)
             .flatten()
             .flatten()
-            .flat_map(|review| {
+            .filter_map(|review| {
                 let user_name = review.author.as_ref()?.login.clone();
                 let status = match review.state {
                     pull_request_query::PullRequestReviewState::APPROVED => ReviewStatus::Approved,
@@ -278,7 +282,7 @@ impl GitHub {
             .flatten()
             .flatten()
             .flat_map(|x| &x.requested_reviewer)
-            .flat_map(|reviewer| {
+            .filter_map(|reviewer| {
               type UserType = pull_request_query::PullRequestQueryRepositoryPullRequestReviewRequestsNodesRequestedReviewer;
               match reviewer {
                 UserType::User(user) => Some(user.login.clone()),
@@ -291,16 +295,8 @@ impl GitHub {
             .into_iter()
             .collect();
 
-        sections.insert(
-            MessageSection::Reviewers,
-            requested_reviewers.iter().fold(String::new(), |out, slug| {
-                if out.is_empty() {
-                    slug.to_string()
-                } else {
-                    format!("{}, {}", out, slug)
-                }
-            }),
-        );
+        sections
+            .insert(MessageSection::Reviewers, requested_reviewers.join(", "));
 
         if review_status == Some(ReviewStatus::Approved) {
             sections.insert(
@@ -308,23 +304,15 @@ impl GitHub {
                 reviewers
                     .iter()
                     .filter_map(|(k, v)| {
-                        if v == &ReviewStatus::Approved {
-                            Some(k)
-                        } else {
-                            None
-                        }
+                        (v == &ReviewStatus::Approved).then_some(k.as_str())
                     })
-                    .fold(String::new(), |out, slug| {
-                        if out.is_empty() {
-                            slug.to_string()
-                        } else {
-                            format!("{}, {}", out, slug)
-                        }
-                    }),
+                    .collect::<Vec<_>>()
+                    .join(", "),
             );
         }
 
         Ok::<_, Error>(PullRequest {
+            #[allow(clippy::cast_sign_loss)]
             number: pr.number as u64,
             state: match pr.state {
                 pull_request_query::PullRequestState::OPEN => {
@@ -438,6 +426,7 @@ impl GitHub {
         let variables = pull_request_mergeability_query::Variables {
             name: self.config.repo.clone(),
             owner: self.config.owner.clone(),
+            #[allow(clippy::cast_possible_wrap)]
             number: number as i64,
         };
         let request_body = PullRequestMergeabilityQuery::build_query(variables);
@@ -466,8 +455,8 @@ impl GitHub {
             mergeable: match pr.mergeable {
                 pull_request_mergeability_query::MergeableState::CONFLICTING => Some(false),
                 pull_request_mergeability_query::MergeableState::MERGEABLE => Some(true),
-                pull_request_mergeability_query::MergeableState::UNKNOWN => None,
-                _ => None,
+                pull_request_mergeability_query::MergeableState::UNKNOWN
+                | pull_request_mergeability_query::MergeableState::Other(_) => None,
             },
             merge_commit: pr
             .merge_commit
@@ -503,6 +492,7 @@ impl GitHubBranch {
         })
     }
 
+    #[must_use]
     pub fn new_from_branch_name(
         branch_name: &str,
         master_branch_name: &str,
@@ -513,14 +503,17 @@ impl GitHubBranch {
         }
     }
 
+    #[must_use]
     pub fn on_github(&self) -> &str {
         &self.ref_on_github
     }
 
+    #[must_use]
     pub fn is_master_branch(&self) -> bool {
         self.is_master_branch
     }
 
+    #[must_use]
     pub fn branch_name(&self) -> &str {
         // The branch name is `ref_on_github` with the `refs/heads/` prefix
         // (length 11) removed

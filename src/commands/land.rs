@@ -67,8 +67,7 @@ pub async fn land(
                 }
                 // Landed some but hit a blocker — that's fine
                 crate::output::output_essential(&format!(
-                    "landed {} PR(s), stopped: {}",
-                    landed, e
+                    "landed {landed} PR(s), stopped: {e}"
                 ))?;
                 return Ok(());
             }
@@ -76,7 +75,7 @@ pub async fn land(
     }
 
     if landed > 0 {
-        crate::output::output_essential(&format!("landed {} PR(s)", landed))?;
+        crate::output::output_essential(&format!("landed {landed} PR(s)"))?;
     } else {
         crate::output::output_essential("nothing to land")?;
     }
@@ -104,19 +103,16 @@ async fn land_one(
         )));
     }
 
-    let prepared_commit = match prepared_commits.last_mut() {
-        Some(c) => c,
-        None => {
-            output("👋", "Branch is empty - nothing to do. Good bye!")?;
-            return Ok(());
-        }
+    let Some(prepared_commit) = prepared_commits.last_mut() else {
+        output("👋", "Branch is empty - nothing to do. Good bye!")?;
+        return Ok(());
     };
 
     write_commit_title(prepared_commit)?;
 
     let pull_request_number =
         if let Some(number) = prepared_commit.pull_request_number {
-            output("#️⃣ ", &format!("Pull Request #{}", number))?;
+            output("#️⃣ ", &format!("Pull Request #{number}"))?;
             number
         } else {
             bail!("This commit does not refer to a Pull Request.");
@@ -309,7 +305,7 @@ async fn land_one(
                      request and then try `spr land` again!"
                 )));
                 }
-            };
+            }
 
             break Ok(());
         }
@@ -348,7 +344,7 @@ async fn land_one(
                 })
                 .title(pull_request.title)
                 .message(build_github_body_for_merging(&pull_request.sections))
-                .sha(format!("{}", pr_head_oid))
+                .sha(format!("{pr_head_oid}"))
                 .send()
                 .await
                 .map_err(Report::new)

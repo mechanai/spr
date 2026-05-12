@@ -35,7 +35,7 @@ pub async fn close(
     if prepared_commits.is_empty() {
         output("👋", "Branch is empty - nothing to do. Good bye!")?;
         return result;
-    };
+    }
 
     if !opts.all {
         // Remove all prepared commits from the vector but the last. So, if
@@ -43,7 +43,7 @@ pub async fn close(
         prepared_commits.drain(0..prepared_commits.len() - 1);
     }
 
-    for prepared_commit in prepared_commits.iter_mut() {
+    for prepared_commit in &mut prepared_commits {
         if result.is_err() {
             break;
         }
@@ -70,7 +70,7 @@ async fn close_impl(
 ) -> Result<()> {
     let pull_request_number =
         if let Some(number) = prepared_commit.pull_request_number {
-            output("#️⃣ ", &format!("Pull Request #{}", number))?;
+            output("#️⃣ ", &format!("Pull Request #{number}"))?;
             number
         } else {
             bail!("This commit does not refer to a Pull Request.");
@@ -104,7 +104,7 @@ async fn close_impl(
 
             return Err(error);
         }
-    };
+    }
 
     output("📕", "Closed!")?;
 

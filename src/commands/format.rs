@@ -19,6 +19,7 @@ pub struct FormatOptions {
     all: bool,
 }
 
+#[allow(clippy::unused_async)]
 pub async fn format(
     opts: FormatOptions,
     git: &crate::git::Git,

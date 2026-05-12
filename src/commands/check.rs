@@ -16,6 +16,7 @@ pub struct CheckOptions {
     pub cherry_pick: bool,
 }
 
+#[allow(clippy::unused_async)]
 pub async fn check(
     opts: CheckOptions,
     git: &crate::git::Git,
@@ -32,13 +33,13 @@ pub async fn check(
         .ok_or_else(|| eyre!("No commits on branch"))?;
 
     // Validate commit message
-    let mut message = head_commit.message.clone();
-    validate_commit_message(&mut message, config)?;
+    let message = head_commit.message.clone();
+    validate_commit_message(&message, config)?;
     output_essential("message: ok")?;
 
     // Check if PR already exists
     if let Some(number) = head_commit.pull_request_number {
-        output_essential(&format!("pr: #{}", number))?;
+        output_essential(&format!("pr: #{number}"))?;
     } else {
         output_essential("pr: new")?;
     }
@@ -55,9 +56,8 @@ pub async fn check(
         if index.has_conflicts() {
             output_essential("cherry-pick: conflict")?;
             return Err(eyre!("Cherry-pick would conflict"));
-        } else {
-            output_essential("cherry-pick: clean")?;
         }
+        output_essential("cherry-pick: clean")?;
     }
 
     output_essential("check: pass")?;

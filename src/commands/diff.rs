@@ -143,8 +143,7 @@ pub async fn diff(
         .map(|pc: &PreparedCommit| {
             if revs_to_pr
                 .as_ref()
-                .map(|revs| revs.contains(&pc.oid))
-                .unwrap_or(true)
+                .is_none_or(|revs| revs.contains(&pc.oid))
             {
                 // We are going to want to look at this pull request below.
                 pc.pull_request_number.map(|number| {
@@ -161,7 +160,7 @@ pub async fn diff(
         })
         .collect();
 
-    let mut message_on_prompt = "".to_string();
+    let mut message_on_prompt = String::new();
 
     // Build stack info for PR body (only if multiple commits)
     let stack_info = if prepared_commits.len() > 1 {
@@ -170,12 +169,11 @@ pub async fn diff(
             let title = pc
                 .message
                 .get(&MessageSection::Title)
-                .map(|s| s.as_str())
-                .unwrap_or("(untitled)");
+                .map_or("(untitled)", std::string::String::as_str);
             if let Some(number) = pc.pull_request_number {
-                lines.push(format!("- #{} {}", number, title));
+                lines.push(format!("- #{number} {title}"));
             } else {
-                lines.push(format!("- ⏳ {}", title));
+                lines.push(format!("- ⏳ {title}"));
             }
         }
         Some(lines.join("\n"))
@@ -184,7 +182,7 @@ pub async fn diff(
     };
 
     for (prepared_commit, pull_request_task) in
-        zip(prepared_commits.iter_mut(), pull_request_tasks.into_iter())
+        zip(prepared_commits.iter_mut(), pull_request_tasks)
     {
         if result.is_err() {
             break;
@@ -194,8 +192,7 @@ pub async fn diff(
         // to operate on, but it doesn't contain this commit oid
         if revs_to_pr
             .as_ref()
-            .map(|revs| !revs.contains(&prepared_commit.oid))
-            .unwrap_or(false)
+            .is_some_and(|revs| !revs.contains(&prepared_commit.oid))
         {
             continue;
         }
@@ -212,8 +209,7 @@ pub async fn diff(
         let title = prepared_commit
             .message
             .get(&MessageSection::Title)
-            .map(|s| s.as_str())
-            .unwrap_or("");
+            .map_or("", std::string::String::as_str);
         if title.starts_with("WIP")
             || title.starts_with("wip")
             || title.starts_with("[WIP]")
@@ -331,7 +327,7 @@ async fn diff_impl(
 
         if !opts.update_message {
             let mut pull_request_updates: PullRequestUpdate =
-                Default::default();
+                PullRequestUpdate::default();
             pull_request_updates.update_message(pull_request, message);
 
             if !pull_request_updates.is_empty() {
@@ -378,7 +374,7 @@ async fn diff_impl(
                     {
                         requested_reviewers
                             .team_reviewers
-                            .push(team.slug.to_string());
+                            .push(team.slug.clone());
 
                         checked_reviewers.push(reviewer);
                     } else {
@@ -418,10 +414,7 @@ async fn diff_impl(
     // Get the name of the existing Pull Request branch, or constuct one if
     // there is none yet.
 
-    let title = message
-        .get(&MessageSection::Title)
-        .map(|t| &t[..])
-        .unwrap_or("");
+    let title = message.get(&MessageSection::Title).map_or("", |t| &t[..]);
 
     let pull_request_branch = match &pull_request {
         Some(pr) => pr.head.clone(),
@@ -488,7 +481,7 @@ async fn diff_impl(
                 // GitHub
 
                 let mut pull_request_updates: PullRequestUpdate =
-                    Default::default();
+                    PullRequestUpdate::default();
                 pull_request_updates.update_message(pull_request, message);
 
                 if !pull_request_updates.is_empty() {
@@ -641,7 +634,7 @@ async fn diff_impl(
                 bail!("Aborted as per user request");
             }
 
-            *message_on_prompt = input.clone();
+            message_on_prompt.clone_from(&input);
             github_commit_message = Some(input);
         }
     }
@@ -668,8 +661,7 @@ async fn diff_impl(
             "{}\n\nCreated using spr {}",
             github_commit_message
                 .as_ref()
-                .map(|s| &s[..])
-                .unwrap_or("[𝘀𝗽𝗿] initial version"),
+                .map_or("[𝘀𝗽𝗿] initial version", |s| &s[..]),
             env!("CARGO_PKG_VERSION"),
         ),
         new_head_tree,
@@ -703,7 +695,8 @@ async fn diff_impl(
         }
 
         // Things we want to update in the Pull Request on GitHub
-        let mut pull_request_updates: PullRequestUpdate = Default::default();
+        let mut pull_request_updates: PullRequestUpdate =
+            PullRequestUpdate::default();
 
         if opts.update_message {
             pull_request_updates.update_message(&pull_request, message);

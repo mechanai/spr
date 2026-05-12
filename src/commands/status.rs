@@ -44,20 +44,16 @@ pub async fn status(
     let mut all_ready = true;
 
     for pc in commits_to_check {
-        let pr_number = match pc.pull_request_number {
-            Some(n) => n,
-            None => {
-                output_essential(&format!(
-                    "{} | no pr | {}",
-                    &pc.short_id,
-                    pc.message
-                        .get(&crate::message::MessageSection::Title)
-                        .map(|s| s.as_str())
-                        .unwrap_or("(untitled)")
-                ))?;
-                all_ready = false;
-                continue;
-            }
+        let Some(pr_number) = pc.pull_request_number else {
+            output_essential(&format!(
+                "{} | no pr | {}",
+                &pc.short_id,
+                pc.message
+                    .get(&crate::message::MessageSection::Title)
+                    .map_or("(untitled)", std::string::String::as_str)
+            ))?;
+            all_ready = false;
+            continue;
         };
 
         let pr = gh.clone().get_pull_request(pr_number).await?;

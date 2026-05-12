@@ -22,8 +22,11 @@ pub enum MessageSection {
     PullRequest,
 }
 
+#[must_use]
 pub fn message_section_label(section: &MessageSection) -> &'static str {
-    use MessageSection::*;
+    use MessageSection::{
+        PullRequest, ReviewedBy, Reviewers, Summary, TestPlan, Title,
+    };
 
     match section {
         Title => "Title",
@@ -35,21 +38,24 @@ pub fn message_section_label(section: &MessageSection) -> &'static str {
     }
 }
 
+#[must_use]
 pub fn message_section_by_label(label: &str) -> Option<MessageSection> {
-    use MessageSection::*;
+    use MessageSection::{
+        PullRequest, ReviewedBy, Reviewers, Summary, TestPlan, Title,
+    };
 
     match &label.to_ascii_lowercase()[..] {
         "title" => Some(Title),
         "summary" => Some(Summary),
         "test plan" => Some(TestPlan),
-        "reviewer" => Some(Reviewers),
-        "reviewers" => Some(Reviewers),
+        "reviewer" | "reviewers" => Some(Reviewers),
         "reviewed by" => Some(ReviewedBy),
         "pull request" => Some(PullRequest),
         _ => None,
     }
 }
 
+#[must_use]
 pub fn parse_message(
     msg: &str,
     top_section: MessageSection,
@@ -61,11 +67,8 @@ pub fn parse_message(
     let mut sections =
         std::collections::BTreeMap::<MessageSection, String>::new();
 
-    for (lineno, line) in msg
-        .trim()
-        .split('\n')
-        .map(|line| line.trim_end())
-        .enumerate()
+    #[allow(clippy::str_split_at_newline)]
+    for (lineno, line) in msg.trim().split('\n').map(str::trim_end).enumerate()
     {
         if let Some(caps) = regex.captures(line) {
             let label = caps.get(1).unwrap().as_str();
@@ -104,21 +107,22 @@ fn append_to_message_section(
     entry: std::collections::btree_map::Entry<MessageSection, String>,
     text: &str,
 ) {
-    if !text.is_empty() {
+    if text.is_empty() {
+        entry.or_default();
+    } else {
         entry
             .and_modify(|value| {
                 if value.is_empty() {
                     *value = text.to_string();
                 } else {
-                    *value = format!("{}\n\n{}", value, text);
+                    *value = format!("{value}\n\n{text}");
                 }
             })
             .or_insert_with(|| text.to_string());
-    } else {
-        entry.or_default();
     }
 }
 
+#[must_use]
 pub fn build_message(
     section_texts: &MessageSectionsMap,
     sections: &[MessageSection],
@@ -161,6 +165,7 @@ pub fn build_message(
     result
 }
 
+#[must_use]
 pub fn build_commit_message(section_texts: &MessageSectionsMap) -> String {
     build_message(
         section_texts,
@@ -175,6 +180,7 @@ pub fn build_commit_message(section_texts: &MessageSectionsMap) -> String {
     )
 }
 
+#[must_use]
 pub fn build_github_body(section_texts: &MessageSectionsMap) -> String {
     build_message(
         section_texts,
@@ -182,6 +188,7 @@ pub fn build_github_body(section_texts: &MessageSectionsMap) -> String {
     )
 }
 
+#[must_use]
 pub fn build_github_body_for_merging(
     section_texts: &MessageSectionsMap,
 ) -> String {

@@ -5,6 +5,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#![warn(clippy::pedantic)]
+#![allow(
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::too_many_lines,
+    clippy::struct_excessive_bools,
+    clippy::fn_params_excessive_bools,
+    clippy::module_name_repetitions
+)]
+
 //! A command-line tool for submitting and updating GitHub Pull Requests from
 //! local Git commits that may be amended and rebased. Pull Requests can be
 //! stacked to allow for a series of code reviews of interdependent code.
@@ -42,17 +52,17 @@ pub struct Cli {
 
     /// prefix to be used for branches created for pull requests (if not given
     /// taken from git config spr.branchPrefix, defaulting to
-    /// 'spr/<GITHUB_USERNAME>/')
+    /// 'spr/<`GITHUB_USERNAME`>/')
     #[clap(long)]
     branch_prefix: Option<String>,
 
     /// Never prompt for input; fail instead of waiting for user interaction.
-    /// Also enabled by setting SPR_NON_INTERACTIVE=1.
+    /// Also enabled by setting `SPR_NON_INTERACTIVE=1`.
     #[clap(long)]
     non_interactive: bool,
 
     /// Suppress decorative output; only print essential information (URLs, PR numbers).
-    /// Also enabled by setting SPR_QUIET=1.
+    /// Also enabled by setting `SPR_QUIET=1`.
     #[clap(long, short = 'q')]
     quiet: bool,
 
@@ -100,7 +110,7 @@ enum Commands {
 
 pub async fn spr() -> Result<()> {
     let cli = Cli::parse();
-    debug!("Started with command line: {:?}", cli);
+    debug!("Started with command line: {cli:?}");
 
     let quiet = cli.quiet
         || std::env::var("SPR_QUIET")
@@ -203,7 +213,7 @@ pub async fn spr() -> Result<()> {
     let config = spr::config::Config::new(
         github_owner,
         github_repo,
-        github_master_branch,
+        &github_master_branch,
         branch_prefix,
         github_auth_token.clone(),
         require_approval,
@@ -213,7 +223,7 @@ pub async fn spr() -> Result<()> {
         default_reviewers,
         merge_method,
     );
-    debug!("config: {:?}", config);
+    debug!("config: {config:?}");
 
     let git = spr::git::Git::new(repo);
 
@@ -231,38 +241,38 @@ pub async fn spr() -> Result<()> {
 
     match cli.command {
         Commands::Diff(opts) => {
-            commands::diff::diff(opts, &git, &mut gh, &config).await?
+            commands::diff::diff(opts, &git, &mut gh, &config).await?;
         }
         Commands::Land(opts) => {
-            commands::land::land(opts, &git, &mut gh, &config).await?
+            commands::land::land(opts, &git, &mut gh, &config).await?;
         }
         Commands::Amend(opts) => {
-            commands::amend::amend(opts, &git, &mut gh, &config).await?
+            commands::amend::amend(opts, &git, &mut gh, &config).await?;
         }
         Commands::List => commands::list::list(&config).await?,
         Commands::Patch(opts) => {
-            commands::patch::patch(opts, &git, &mut gh, &config).await?
+            commands::patch::patch(opts, &git, &mut gh, &config).await?;
         }
         Commands::Close(opts) => {
-            commands::close::close(opts, &git, &mut gh, &config).await?
+            commands::close::close(opts, &git, &mut gh, &config).await?;
         }
         Commands::Status(opts) => {
-            commands::status::status(opts, &git, &mut gh, &config).await?
+            commands::status::status(opts, &git, &mut gh, &config).await?;
         }
         Commands::Check(opts) => {
-            commands::check::check(opts, &git, &mut gh, &config).await?
+            commands::check::check(opts, &git, &mut gh, &config).await?;
         }
         Commands::Sync(opts) => {
-            commands::sync::sync(opts, &git, &mut gh, &config).await?
+            commands::sync::sync(opts, &git, &mut gh, &config).await?;
         }
         Commands::Format(opts) => {
-            commands::format::format(opts, &git, &mut gh, &config).await?
+            commands::format::format(opts, &git, &mut gh, &config).await?;
         }
 
         // The following commands are executed above and return from this
         // function before it reaches this match.
         Commands::Init => (),
-    };
+    }
 
     Ok::<_, Error>(())
 }
@@ -275,8 +285,8 @@ async fn main() {
     match result {
         Ok(()) => std::process::exit(0),
         Err(err) => {
-            let msg = format!("{:#}", err);
-            eprintln!("error: {}", msg);
+            let msg = format!("{err:#}");
+            eprintln!("error: {msg}");
 
             // Exit code 2: auth/config issues
             if msg.contains("auth token")

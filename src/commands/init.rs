@@ -160,8 +160,7 @@ pub async fn init() -> Result<()> {
         github_repo_info
             .default_branch
             .as_ref()
-            .map(|s| &s[..])
-            .unwrap_or("master"),
+            .map_or("master", |s| &s[..]),
     )?;
 
     // Pull Request branch prefix
@@ -200,6 +199,7 @@ pub async fn init() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::case_sensitive_file_extension_comparisons)]
 fn validate_branch_prefix(branch_prefix: &str) -> Result<()> {
     // They can include slash / for hierarchical (directory) grouping, but no slash-separated component can begin with a dot . or end with the sequence .lock.
     if branch_prefix.contains("/.")
