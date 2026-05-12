@@ -5,13 +5,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-use color_eyre::eyre::{Error, Report, Result, WrapErr as _, bail, eyre};
+use color_eyre::eyre::{Error, Result, WrapErr as _, bail, eyre};
 use indoc::formatdoc;
 use std::time::Duration;
 
 use crate::{
+    forge::{ChangeRequestState, ChangeRequestUpdate, ReviewStatus},
     git_remote::PushSpec,
-    github::{PullRequestState, PullRequestUpdate, ReviewStatus},
     message::build_github_body_for_merging,
     output::{output, write_commit_title},
 };
@@ -32,17 +32,19 @@ pub struct LandOptions {
 pub async fn land(
     opts: LandOptions,
     git: &crate::git::Git,
-    gh: &mut crate::github::GitHub,
+    forge: &dyn crate::forge::ForgeApi,
     config: &crate::config::Config,
 ) -> Result<()> {
     if !opts.all {
-        return land_one(opts.cherry_pick, git, gh, config).await;
+        return land_one(opts.cherry_pick, git, forge, config).await;
     }
 
     // --all: land commits from bottom to top
     let mut landed = 0u32;
     loop {
-        let prepared_commits = gh.get_prepared_commits()?;
+        let remote_tip = forge.fetch_branch(config.master_branch_name())?;
+        let prepared_commits =
+            crate::forge::get_prepared_commits(git, config, remote_tip)?;
         if prepared_commits.is_empty() {
             break;
         }
@@ -57,7 +59,7 @@ pub async fn land(
         }
 
         // Try landing with cherry_pick since there may be commits above
-        match land_one(true, git, gh, config).await {
+        match land_one(true, git, forge, config).await {
             Ok(()) => {
                 landed += 1;
             }
@@ -85,11 +87,13 @@ pub async fn land(
 async fn land_one(
     cherry_pick: bool,
     git: &crate::git::Git,
-    gh: &mut crate::github::GitHub,
+    forge: &dyn crate::forge::ForgeApi,
     config: &crate::config::Config,
 ) -> Result<()> {
     git.check_no_uncommitted_changes()?;
-    let mut prepared_commits = gh.get_prepared_commits()?;
+    let remote_tip = forge.fetch_branch(config.master_branch_name())?;
+    let mut prepared_commits =
+        crate::forge::get_prepared_commits(git, config, remote_tip)?;
 
     let based_on_unlanded_commits = prepared_commits.len() > 1;
 
@@ -119,14 +123,19 @@ async fn land_one(
         };
 
     // Load Pull Request information
-    let pull_request = gh.get_pull_request(pull_request_number).await?;
+    let change_request = forge
+        .get_change_request(pull_request_number)
+        .await?
+        .ok_or_else(|| {
+            eyre!("Pull Request #{} not found", pull_request_number)
+        })?;
 
-    if pull_request.state != PullRequestState::Open {
+    if change_request.state != ChangeRequestState::Open {
         bail!("This Pull Request is already closed!");
     }
 
     if config.require_approval
-        && pull_request.review_status != Some(ReviewStatus::Approved)
+        && change_request.review_status != Some(ReviewStatus::Approved)
     {
         bail!("This Pull Request has not been approved on GitHub.");
     }
@@ -135,9 +144,10 @@ async fn land_one(
 
     // Fetch current master from GitHub.
     let current_master =
-        gh.remote().fetch_branch(config.master_branch_name())?;
+        forge.fetch_branch(config.master_branch_name())?;
 
-    let base_is_master = pull_request.base.is_master_branch();
+    let base_is_master =
+        config.is_master_branch(&change_request.base_ref_name);
     let index = git.cherrypick(prepared_commit.oid, current_master)?;
 
     if index.has_conflicts() {
@@ -162,7 +172,7 @@ async fn land_one(
     let merge_index = {
         let repo = git.repo();
         let current_master = repo.find_commit(current_master)?;
-        let pr_head = repo.find_commit(pull_request.head_oid)?;
+        let pr_head = repo.find_commit(change_request.head_oid)?;
         repo.merge_commits(&current_master, &pr_head, None)
     }?;
 
@@ -184,7 +194,7 @@ async fn land_one(
     // Okay, we are confident now that the PR can be merged and the result of
     // that merge would be a master commit with the same tree as if we
     // cherry-picked the commit onto master.
-    let mut pr_head_oid = pull_request.head_oid;
+    let mut pr_head_oid = change_request.head_oid;
 
     if !base_is_master {
         // The base of the Pull Request on GitHub is not set to master. This
@@ -218,8 +228,9 @@ async fn land_one(
         // above from the cherry-picking of this commit on master.
 
         // The commit on the base branch that the PR branch is currently based on
-        let pr_base_oid =
-            git.repo().merge_base(pr_head_oid, pull_request.base_oid)?;
+        let pr_base_oid = git
+            .repo()
+            .merge_base(pr_head_oid, change_request.base_oid)?;
         let pr_base_tree = git.get_tree_oid_for_commit(pr_base_oid)?;
 
         let pr_master_base =
@@ -250,22 +261,27 @@ async fn land_one(
                 &[pr_head_oid, current_master],
             )?;
 
-            gh.remote()
+            forge
                 .push_to_remote(&[PushSpec {
                     oid: Some(pr_head_oid),
-                    remote_ref: pull_request.head.on_github(),
+                    remote_ref: &format!(
+                        "refs/heads/{}",
+                        change_request.head_ref_name
+                    ),
                 }])
                 .wrap_err("git push failed")?;
         }
 
-        gh.update_pull_request(
-            pull_request_number,
-            PullRequestUpdate {
-                base: Some(config.master_branch_name().to_string()),
-                ..Default::default()
-            },
-        )
-        .await?;
+        forge
+            .update_change_request(
+                pull_request_number,
+                &ChangeRequestUpdate {
+                    base: Some(config.master_branch_name().to_string()),
+                    ..Default::default()
+                },
+                None,
+            )
+            .await?;
     }
 
     // Check whether GitHub says this PR is mergeable. This happens in a
@@ -275,9 +291,8 @@ async fn land_one(
     let result = loop {
         attempts += 1;
 
-        let mergeability = gh
-            .get_pull_request_mergeability(pull_request_number)
-            .await?;
+        let mergeability =
+            forge.get_mergeability(pull_request_number).await?;
 
         if mergeability.head_oid != pr_head_oid {
             break Err(eyre!(
@@ -285,7 +300,7 @@ async fn land_one(
             ));
         }
 
-        if mergeability.base.is_master_branch()
+        if config.is_master_branch(&mergeability.base_ref_name)
             && mergeability.mergeable.is_some()
         {
             if mergeability.mergeable != Some(true) {
@@ -296,7 +311,7 @@ async fn land_one(
             }
 
             if let Some(merge_commit) = mergeability.merge_commit {
-                gh.remote().fetch_from_remote(&[], &[merge_commit])?;
+                forge.fetch_from_remote(&[], &[merge_commit])?;
 
                 if git.get_tree_oid_for_commit(merge_commit)? != our_tree_oid {
                     return Err(Error::msg(formatdoc!(
@@ -323,62 +338,48 @@ async fn land_one(
 
     let result = match result {
         Ok(()) => {
-            // We have checked that merging the Pull Request branch into the master
-            // branch produces the intended result, and that's independent of whether we
-            // used a base branch with this Pull Request or not. We have made sure the
-            // target of the Pull Request is set to the master branch. So let GitHub do
-            // the merge now!
-            octocrab::instance()
-                .pulls(&config.owner, &config.repo)
-                .merge(pull_request_number)
-                .method(match config.merge_method {
-                    crate::config::MergeMethod::Squash => {
-                        octocrab::params::pulls::MergeMethod::Squash
-                    }
-                    crate::config::MergeMethod::Rebase => {
-                        octocrab::params::pulls::MergeMethod::Rebase
-                    }
-                    crate::config::MergeMethod::Merge => {
-                        octocrab::params::pulls::MergeMethod::Merge
-                    }
-                })
-                .title(pull_request.title)
-                .message(build_github_body_for_merging(&pull_request.sections))
-                .sha(format!("{pr_head_oid}"))
-                .send()
+            forge
+                .merge_change_request(
+                    pull_request_number,
+                    config.merge_method.clone(),
+                    &change_request.title,
+                    &build_github_body_for_merging(&change_request.sections),
+                    pr_head_oid,
+                )
                 .await
-                .map_err(Report::new)
-                .and_then(|merge| {
-                    if merge.merged {
-                        Ok(merge)
-                    } else {
-                        Err(eyre!(
-                            "GitHub Pull Request merge failed: {}",
-                            merge.message.unwrap_or_default()
-                        ))
-                    }
-                })
         }
         Err(err) => Err(err),
     };
 
-    let merge = match result {
-        Ok(merge) => merge,
+    match result {
+        Ok(()) => {
+            output("🛬", "Landed!")?;
+
+            // Fetch updated master to rebase on
+            let new_master =
+                forge.fetch_branch(config.master_branch_name())?;
+            git.rebase_commits(&mut prepared_commits[..], new_master)
+                .context(
+                    "The automatic rebase failed - please rebase manually!"
+                        .to_string(),
+                )?;
+        }
         Err(mut error) => {
             output("❌", "GitHub Pull Request merge failed")?;
 
-            // If we changed the target branch of the Pull Request earlier, then
-            // undo this change now.
+            // If we changed the target branch of the Pull Request earlier,
+            // then undo this change now.
             if !base_is_master {
-                let result = gh
-                    .update_pull_request(
+                let result = forge
+                    .update_change_request(
                         pull_request_number,
-                        PullRequestUpdate {
+                        &ChangeRequestUpdate {
                             base: Some(
-                                pull_request.base.on_github().to_string(),
+                                change_request.base_ref_name.clone(),
                             ),
                             ..Default::default()
                         },
+                        None,
                     )
                     .await;
                 if let Err(e) = result {
@@ -388,47 +389,25 @@ async fn land_one(
 
             return Err(error);
         }
-    };
-
-    output("🛬", "Landed!")?;
-
-    // Rebase us on top of the now-landed commit
-    if let Some(sha) = merge.sha {
-        let new_parent_oid = git2::Oid::from_str(&sha)?;
-        // Try this up to three times, because fetching the very moment after
-        // the merge might still not find the new commit.
-        for i in 0..3 {
-            // Fetch current master and the merge commit from GitHub.
-            let result = gh.remote().fetch_from_remote(&[], &[new_parent_oid]);
-
-            if result.is_ok() {
-                break;
-            } else if i == 2 {
-                return result
-                    .map(|_| ())
-                    .context("git fetch failed".to_string());
-            }
-        }
-        git.rebase_commits(&mut prepared_commits[..], new_parent_oid)
-            .context(
-                "The automatic rebase failed - please rebase manually!"
-                    .to_string(),
-            )?;
     }
 
+    let head_remote_ref =
+        format!("refs/heads/{}", change_request.head_ref_name);
     let mut push_specs = vec![PushSpec {
         oid: None,
-        remote_ref: pull_request.head.on_github(),
+        remote_ref: &head_remote_ref,
     }];
 
+    let base_remote_ref =
+        format!("refs/heads/{}", change_request.base_ref_name);
     if !base_is_master {
         push_specs.push(PushSpec {
             oid: None,
-            remote_ref: pull_request.base.on_github(),
+            remote_ref: &base_remote_ref,
         });
     }
 
-    gh.remote().push_to_remote(&push_specs)?;
+    forge.push_to_remote(&push_specs)?;
 
     Ok(())
 }
