@@ -58,7 +58,9 @@ pub async fn land(
             break;
         }
 
-        // Try landing with cherry_pick since there may be commits above
+        // cherry_pick must be true when landing --all because each iteration
+        // lands HEAD which has unlanded commits below it. land_one would reject
+        // non-cherry-pick mode when based_on_unlanded_commits is true.
         match land_one(true, git, forge, config).await {
             Ok(()) => {
                 landed += 1;
