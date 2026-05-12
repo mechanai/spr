@@ -686,7 +686,14 @@ impl ForgeApi for GitHub {
                 name: u.name,
                 is_collaborator: u.is_collaborator,
             })),
-            Err(_) => Ok(None),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("404") || msg.contains("Not Found") {
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            }
         }
     }
 
@@ -700,7 +707,14 @@ impl ForgeApi for GitHub {
                 name: t.name.clone(),
                 slug: t.slug,
             })),
-            Err(_) => Ok(None),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("404") || msg.contains("Not Found") {
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            }
         }
     }
 
