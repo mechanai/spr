@@ -621,7 +621,7 @@ impl ForgeApi for GitHub {
         match self.get_pull_request(number).await {
             Ok(pr) => Ok(Some(Self::pull_request_to_change_request(pr))),
             Err(e) => {
-                let msg = e.to_string();
+                let msg = e.to_string().to_lowercase();
                 if msg.contains("404") || msg.contains("not found") {
                     Ok(None)
                 } else {
@@ -687,8 +687,8 @@ impl ForgeApi for GitHub {
                 is_collaborator: u.is_collaborator,
             })),
             Err(e) => {
-                let msg = e.to_string();
-                if msg.contains("404") || msg.contains("Not Found") {
+                let msg = e.to_string().to_lowercase();
+                if msg.contains("404") || msg.contains("not found") {
                     Ok(None)
                 } else {
                     Err(e)
@@ -708,8 +708,8 @@ impl ForgeApi for GitHub {
                 slug: t.slug,
             })),
             Err(e) => {
-                let msg = e.to_string();
-                if msg.contains("404") || msg.contains("Not Found") {
+                let msg = e.to_string().to_lowercase();
+                if msg.contains("404") || msg.contains("not found") {
                     Ok(None)
                 } else {
                     Err(e)
