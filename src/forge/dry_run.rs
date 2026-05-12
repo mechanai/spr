@@ -244,6 +244,10 @@ impl ForgeApi for DryRunForge {
     fn change_request_term(&self) -> &str {
         &self.cr_term
     }
+
+    fn is_dry_run(&self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]

@@ -239,8 +239,11 @@ pub async fn diff(
     }
 
     // This updates the commit message in the local Git repository (if it was
-    // changed by the implementation)
-    git.rewrite_commit_messages(prepared_commits.as_mut_slice(), None)?;
+    // changed by the implementation). Skip in dry-run to avoid writing bogus
+    // PR URLs (e.g. PR #0) into local commit history.
+    if !forge.is_dry_run() {
+        git.rewrite_commit_messages(prepared_commits.as_mut_slice(), None)?;
+    }
 
     result
 }
