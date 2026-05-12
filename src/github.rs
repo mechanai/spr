@@ -16,7 +16,14 @@ use crate::{
         MessageSection, MessageSectionsMap, build_github_body, parse_message,
     },
 };
+use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
+
+use crate::forge::{
+    ChangeRequest, ChangeRequestState, ChangeRequestUpdate, ForgeApi,
+    Mergeability, ReviewStatus as ForgeReviewStatus, ReviewerRequest, TeamInfo,
+    UserInfo,
+};
 
 #[derive(Clone)]
 pub struct GitHub {
@@ -459,6 +466,273 @@ impl GitHub {
             .merge_commit
             .and_then(|sha| git2::Oid::from_str(&sha.oid).ok()),
         })
+    }
+
+    pub async fn close_pull_request(&self, number: u64) -> Result<()> {
+        let updates = PullRequestUpdate {
+            state: Some(PullRequestState::Closed),
+            ..Default::default()
+        };
+        self.update_pull_request(number, updates).await
+    }
+
+    pub async fn merge_pull_request(
+        &self,
+        number: u64,
+        method: crate::config::MergeMethod,
+        title: &str,
+        message: &str,
+        expected_head_oid: git2::Oid,
+    ) -> Result<()> {
+        let octocrab_method = match method {
+            crate::config::MergeMethod::Squash => {
+                octocrab::params::pulls::MergeMethod::Squash
+            }
+            crate::config::MergeMethod::Rebase => {
+                octocrab::params::pulls::MergeMethod::Rebase
+            }
+            crate::config::MergeMethod::Merge => {
+                octocrab::params::pulls::MergeMethod::Merge
+            }
+        };
+        let merge = octocrab::instance()
+            .pulls(&self.config.owner, &self.config.repo)
+            .merge(number)
+            .method(octocrab_method)
+            .title(title)
+            .message(message)
+            .sha(format!("{expected_head_oid}"))
+            .send()
+            .await?;
+        if merge.merged {
+            Ok(())
+        } else {
+            Err(eyre!(
+                "Pull Request merge failed: {}",
+                merge.message.unwrap_or_default()
+            ))
+        }
+    }
+
+    fn pull_request_to_change_request(
+        pr: PullRequest,
+    ) -> ChangeRequest {
+        ChangeRequest {
+            number: pr.number,
+            title: pr.title,
+            body: pr.body,
+            base_ref_name: pr.base.branch_name().to_owned(),
+            base_oid: pr.base_oid,
+            head_ref_name: pr.head.branch_name().to_owned(),
+            head_oid: pr.head_oid,
+            is_draft: false,
+            state: match pr.state {
+                PullRequestState::Open => ChangeRequestState::Open,
+                PullRequestState::Closed => {
+                    if pr.merge_commit.is_some() {
+                        ChangeRequestState::Merged
+                    } else {
+                        ChangeRequestState::Closed
+                    }
+                }
+            },
+            sections: pr.sections,
+            reviewers: pr
+                .reviewers
+                .into_iter()
+                .map(|(k, v)| {
+                    let forge_status = match v {
+                        ReviewStatus::Requested => {
+                            ForgeReviewStatus::Requested
+                        }
+                        ReviewStatus::Approved => ForgeReviewStatus::Approved,
+                        ReviewStatus::Rejected => ForgeReviewStatus::Rejected,
+                    };
+                    (k, forge_status)
+                })
+                .collect(),
+            review_status: pr.review_status.map(|s| match s {
+                ReviewStatus::Requested => ForgeReviewStatus::Requested,
+                ReviewStatus::Approved => ForgeReviewStatus::Approved,
+                ReviewStatus::Rejected => ForgeReviewStatus::Rejected,
+            }),
+            merge_commit: pr.merge_commit,
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl ForgeApi for GitHub {
+    async fn create_change_request(
+        &self,
+        message: &MessageSectionsMap,
+        base: &str,
+        head: &str,
+        draft: bool,
+        stack_info: Option<&str>,
+    ) -> Result<u64> {
+        self.create_pull_request(
+            message,
+            base.to_owned(),
+            head.to_owned(),
+            draft,
+            stack_info,
+        )
+        .await
+    }
+
+    async fn update_change_request(
+        &self,
+        number: u64,
+        update: &ChangeRequestUpdate,
+        _stack_info: Option<&str>,
+    ) -> Result<()> {
+        let pr_update = PullRequestUpdate {
+            title: update.title.clone(),
+            body: update.body.clone(),
+            base: update.base.clone(),
+            state: update.state.as_ref().map(|s| match s {
+                ChangeRequestState::Open => PullRequestState::Open,
+                ChangeRequestState::Closed | ChangeRequestState::Merged => {
+                    PullRequestState::Closed
+                }
+            }),
+        };
+        self.update_pull_request(number, pr_update).await
+    }
+
+    async fn get_change_request(
+        &self,
+        number: u64,
+    ) -> Result<Option<ChangeRequest>> {
+        match self.get_pull_request(number).await {
+            Ok(pr) => Ok(Some(Self::pull_request_to_change_request(pr))),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("404") || msg.contains("not found") {
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+
+    async fn close_change_request(&self, number: u64) -> Result<()> {
+        self.close_pull_request(number).await
+    }
+
+    async fn merge_change_request(
+        &self,
+        number: u64,
+        method: crate::config::MergeMethod,
+        title: &str,
+        message: &str,
+        expected_head_oid: git2::Oid,
+    ) -> Result<()> {
+        self.merge_pull_request(
+            number,
+            method,
+            title,
+            message,
+            expected_head_oid,
+        )
+        .await
+    }
+
+    async fn get_mergeability(&self, number: u64) -> Result<Mergeability> {
+        let m = self.get_pull_request_mergeability(number).await?;
+        Ok(Mergeability {
+            mergeable: m.mergeable,
+            base_ref_name: m.base.branch_name().to_owned(),
+            head_oid: m.head_oid,
+            merge_commit: m.merge_commit,
+        })
+    }
+
+    async fn request_reviewers(
+        &self,
+        number: u64,
+        reviewers: &ReviewerRequest,
+    ) -> Result<()> {
+        let pr_reviewers = PullRequestRequestReviewers {
+            reviewers: reviewers.users.clone(),
+            team_reviewers: reviewers.teams.clone(),
+        };
+        GitHub::request_reviewers(self, number, pr_reviewers).await
+    }
+
+    async fn add_labels(
+        &self,
+        number: u64,
+        labels: &[String],
+    ) -> Result<()> {
+        GitHub::add_labels(self, number, labels).await
+    }
+
+    async fn get_user(
+        &self,
+        username: &str,
+    ) -> Result<Option<UserInfo>> {
+        match self.get_github_user(username).await {
+            Ok(u) => Ok(Some(UserInfo {
+                login: u.login,
+                name: u.name,
+                is_collaborator: u.is_collaborator,
+            })),
+            Err(_) => Ok(None),
+        }
+    }
+
+    async fn get_team(
+        &self,
+        org: &str,
+        team_slug: &str,
+    ) -> Result<Option<TeamInfo>> {
+        match self.get_github_team(org, team_slug).await {
+            Ok(t) => Ok(Some(TeamInfo {
+                name: t.name.clone(),
+                slug: t.slug,
+            })),
+            Err(_) => Ok(None),
+        }
+    }
+
+    fn push_to_remote(
+        &self,
+        refs: &[crate::git_remote::PushSpec<'_>],
+    ) -> Result<()> {
+        self.git_remote.push_to_remote(refs)
+    }
+
+    fn fetch_from_remote(
+        &self,
+        branch_names: &[&str],
+        commit_oids: &[git2::Oid],
+    ) -> Result<Vec<Option<git2::Oid>>> {
+        self.git_remote.fetch_from_remote(branch_names, commit_oids)
+    }
+
+    fn fetch_branch(&self, branch_name: &str) -> Result<git2::Oid> {
+        self.git_remote.fetch_branch(branch_name)
+    }
+
+    fn find_unused_branch_name(
+        &self,
+        branch_prefix: &str,
+        slug: &str,
+    ) -> Result<String> {
+        self.git_remote.find_unused_branch_name(branch_prefix, slug)
+    }
+
+    fn get_branches(
+        &self,
+    ) -> Result<std::collections::HashMap<String, git2::Oid>> {
+        self.git_remote.get_branches()
+    }
+
+    fn change_request_term(&self) -> &str {
+        "PR"
     }
 }
 
