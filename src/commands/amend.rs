@@ -49,7 +49,10 @@ pub async fn amend(
         .rev()
         .map(|pc: &PreparedCommit| {
             pc.pull_request_number.map(|number| {
-                tokio::task::spawn_local(gh.clone().get_pull_request(number))
+                tokio::task::spawn_local({
+                    let gh = gh.clone();
+                    async move { gh.get_pull_request(number).await }
+                })
             })
         })
         .collect();

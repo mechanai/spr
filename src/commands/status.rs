@@ -56,7 +56,7 @@ pub async fn status(
             continue;
         };
 
-        let pr = gh.clone().get_pull_request(pr_number).await?;
+        let pr = gh.get_pull_request(pr_number).await?;
 
         let review = match &pr.review_status {
             Some(ReviewStatus::Approved) => "approved",

@@ -14,7 +14,7 @@ use crate::{
     git::PreparedCommit,
     git_remote::PushSpec,
     github::{
-        GitHub, PullRequest, PullRequestRequestReviewers, PullRequestState,
+        PullRequest, PullRequestRequestReviewers, PullRequestState,
         PullRequestUpdate,
     },
     message::{MessageSection, validate_commit_message},
@@ -147,9 +147,10 @@ pub async fn diff(
             {
                 // We are going to want to look at this pull request below.
                 pc.pull_request_number.map(|number| {
-                    tokio::task::spawn_local(
-                        gh.clone().get_pull_request(number),
-                    )
+                    tokio::task::spawn_local({
+                        let gh = gh.clone();
+                        async move { gh.get_pull_request(number).await }
+                    })
                 })
             } else {
                 // We will be skipping this commit below, because we have as set
@@ -366,9 +367,9 @@ async fn diff_impl(
             for reviewer in reviewers_list {
                 // Teams are indicated with a leading #
                 if let Some(slug) = reviewer.strip_prefix('#') {
-                    if let Ok(team) = GitHub::get_github_team(
-                        (&config.owner).into(),
-                        slug.into(),
+                    if let Ok(team) = gh.get_github_team(
+                        &config.owner,
+                        slug,
                     )
                     .await
                     {
@@ -384,7 +385,7 @@ async fn diff_impl(
                         );
                     }
                 } else if let Ok(user) =
-                    GitHub::get_github_user(reviewer.clone()).await
+                    gh.get_github_user(&reviewer).await
                 {
                     requested_reviewers.reviewers.push(user.login);
                     if let Some(name) = user.name {

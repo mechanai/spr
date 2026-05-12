@@ -119,7 +119,7 @@ async fn land_one(
         };
 
     // Load Pull Request information
-    let pull_request = gh.clone().get_pull_request(pull_request_number).await?;
+    let pull_request = gh.get_pull_request(pull_request_number).await?;
 
     if pull_request.state != PullRequestState::Open {
         bail!("This Pull Request is already closed!");

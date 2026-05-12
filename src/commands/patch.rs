@@ -32,7 +32,7 @@ pub async fn patch(
     gh: &mut crate::github::GitHub,
     config: &crate::config::Config,
 ) -> Result<()> {
-    let pr = gh.clone().get_pull_request(opts.pull_request).await?;
+    let pr = gh.get_pull_request(opts.pull_request).await?;
     output(
         "#️⃣ ",
         &format!(

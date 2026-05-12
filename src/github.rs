@@ -166,7 +166,7 @@ impl GitHub {
         self.git.get_prepared_commits(&self.config, master_oid)
     }
 
-    pub async fn get_github_user(login: String) -> Result<UserWithName> {
+    pub async fn get_github_user(&self, login: &str) -> Result<UserWithName> {
         octocrab::instance()
             .get::<UserWithName, _, _>(format!("/users/{login}"), None::<&()>)
             .await
@@ -174,8 +174,9 @@ impl GitHub {
     }
 
     pub async fn get_github_team(
-        owner: String,
-        team: String,
+        &self,
+        owner: &str,
+        team: &str,
     ) -> Result<octocrab::models::teams::Team> {
         octocrab::instance()
             .teams(owner)
@@ -184,14 +185,10 @@ impl GitHub {
             .map_err(Error::from)
     }
 
-    pub async fn get_pull_request(self, number: u64) -> Result<PullRequest> {
-        let GitHub {
-            config, git_remote, ..
-        } = self;
-
+    pub async fn get_pull_request(&self, number: u64) -> Result<PullRequest> {
         let variables = pull_request_query::Variables {
-            name: config.repo.clone(),
-            owner: config.owner.clone(),
+            name: self.config.repo.clone(),
+            owner: self.config.owner.clone(),
             #[allow(clippy::cast_possible_wrap)]
             number: number as i64,
         };
@@ -216,14 +213,14 @@ impl GitHub {
             .pull_request
             .ok_or_else(|| eyre!("failed to find PR"))?;
 
-        let base = config.new_github_branch_from_ref(&pr.base_ref_name)?;
-        let head = config.new_github_branch_from_ref(&pr.head_ref_name)?;
+        let base = self.config.new_github_branch_from_ref(&pr.base_ref_name)?;
+        let head = self.config.new_github_branch_from_ref(&pr.head_ref_name)?;
 
         let branch_names: Vec<_> =
             [&base, &head].iter().map(|&b| b.branch_name()).collect();
 
         let [base_oid, head_oid] =
-            git_remote.fetch_from_remote(&branch_names, &[])?[0..2]
+            self.git_remote.fetch_from_remote(&branch_names, &[])?[0..2]
         else {
             unreachable!();
         };
@@ -249,7 +246,7 @@ impl GitHub {
 
         sections.insert(
             MessageSection::PullRequest,
-            config.pull_request_url(number),
+            self.config.pull_request_url(number),
         );
 
         let reviewers: HashMap<String, ReviewStatus> = pr
