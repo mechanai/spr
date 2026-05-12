@@ -83,11 +83,8 @@ async fn close_impl(
         .get_change_request(pull_request_number)
         .await?
         .ok_or_else(|| {
-            color_eyre::eyre::eyre!(
-                "PR #{} not found",
-                pull_request_number
-            )
-        })?;
+        color_eyre::eyre::eyre!("PR #{} not found", pull_request_number)
+    })?;
 
     if change_request.state != crate::forge::ChangeRequestState::Open {
         bail!("This Pull Request is already closed!");
@@ -95,8 +92,7 @@ async fn close_impl(
 
     output("📖", "Getting started...")?;
 
-    let base_is_master =
-        config.is_master_branch(&change_request.base_ref_name);
+    let base_is_master = config.is_master_branch(&change_request.base_ref_name);
 
     let result = forge
         .update_change_request(

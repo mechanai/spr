@@ -76,9 +76,8 @@ impl ChangeRequestUpdate {
         cr: &ChangeRequest,
         message: &MessageSectionsMap,
     ) {
-        let new_title = message
-            .get(&crate::message::MessageSection::Title)
-            .cloned();
+        let new_title =
+            message.get(&crate::message::MessageSection::Title).cloned();
         if new_title.as_deref() != Some(&cr.title) {
             self.title = new_title;
         }
@@ -110,7 +109,7 @@ pub struct Mergeability {
 /// Implementations exist for GitHub (and in the future, Forgejo, etc.).
 /// Commands use `&dyn ForgeApi` so they are decoupled from any specific forge.
 #[async_trait(?Send)]
-pub(crate) trait ForgeApi {
+pub trait ForgeApi {
     // Change request lifecycle
     async fn create_change_request(
         &self,
@@ -153,11 +152,7 @@ pub(crate) trait ForgeApi {
         reviewers: &ReviewerRequest,
     ) -> Result<()>;
 
-    async fn add_labels(
-        &self,
-        number: u64,
-        labels: &[String],
-    ) -> Result<()>;
+    async fn add_labels(&self, number: u64, labels: &[String]) -> Result<()>;
 
     // User/team lookup
     async fn get_user(&self, username: &str) -> Result<Option<UserInfo>>;

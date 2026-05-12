@@ -127,8 +127,8 @@ async fn land_one(
         .get_change_request(pull_request_number)
         .await?
         .ok_or_else(|| {
-            eyre!("Pull Request #{} not found", pull_request_number)
-        })?;
+        eyre!("Pull Request #{} not found", pull_request_number)
+    })?;
 
     if change_request.state != ChangeRequestState::Open {
         bail!("This Pull Request is already closed!");
@@ -143,11 +143,9 @@ async fn land_one(
     output("🛫", "Getting started...")?;
 
     // Fetch current master from GitHub.
-    let current_master =
-        forge.fetch_branch(config.master_branch_name())?;
+    let current_master = forge.fetch_branch(config.master_branch_name())?;
 
-    let base_is_master =
-        config.is_master_branch(&change_request.base_ref_name);
+    let base_is_master = config.is_master_branch(&change_request.base_ref_name);
     let index = git.cherrypick(prepared_commit.oid, current_master)?;
 
     if index.has_conflicts() {
@@ -291,8 +289,7 @@ async fn land_one(
     let result = loop {
         attempts += 1;
 
-        let mergeability =
-            forge.get_mergeability(pull_request_number).await?;
+        let mergeability = forge.get_mergeability(pull_request_number).await?;
 
         if mergeability.head_oid != pr_head_oid {
             break Err(eyre!(
@@ -356,8 +353,7 @@ async fn land_one(
             output("🛬", "Landed!")?;
 
             // Fetch updated master to rebase on
-            let new_master =
-                forge.fetch_branch(config.master_branch_name())?;
+            let new_master = forge.fetch_branch(config.master_branch_name())?;
             git.rebase_commits(&mut prepared_commits[..], new_master)
                 .context(
                     "The automatic rebase failed - please rebase manually!"
@@ -374,9 +370,7 @@ async fn land_one(
                     .update_change_request(
                         pull_request_number,
                         &ChangeRequestUpdate {
-                            base: Some(
-                                change_request.base_ref_name.clone(),
-                            ),
+                            base: Some(change_request.base_ref_name.clone()),
                             ..Default::default()
                         },
                         None,

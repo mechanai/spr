@@ -12,8 +12,7 @@ use color_eyre::eyre::{Error, Result, WrapErr as _, bail, eyre};
 
 use crate::{
     forge::{
-        ChangeRequest, ChangeRequestState, ChangeRequestUpdate,
-        ReviewerRequest,
+        ChangeRequest, ChangeRequestState, ChangeRequestUpdate, ReviewerRequest,
     },
     git::PreparedCommit,
     git_remote::PushSpec,
@@ -375,9 +374,7 @@ async fn diff_impl(
                             reviewer,
                         );
                     }
-                } else if let Some(user) =
-                    forge.get_user(&reviewer).await?
-                {
+                } else if let Some(user) = forge.get_user(&reviewer).await? {
                     requested_reviewers.users.push(user.login);
                     if let Some(name) = user.name {
                         checked_reviewers.push(format!(
@@ -410,10 +407,8 @@ async fn diff_impl(
 
     let pull_request_branch: String = match &change_request {
         Some(cr) => cr.head_ref_name.clone(),
-        None => forge.find_unused_branch_name(
-            &config.branch_prefix,
-            &slugify(title),
-        )?,
+        None => forge
+            .find_unused_branch_name(&config.branch_prefix, &slugify(title))?,
     };
 
     // Get the tree ids of the current head of the Pull Request, as well as the
@@ -476,9 +471,7 @@ async fn diff_impl(
                 if !updates.is_empty() {
                     // ...and there are actual changes to the message
                     forge
-                        .update_change_request(
-                            cr.number, &updates, stack_info,
-                        )
+                        .update_change_request(cr.number, &updates, stack_info)
                         .await?;
                     output("✍", "Updated commit message on GitHub")?;
                 }
@@ -658,9 +651,8 @@ async fn diff_impl(
     )?;
 
     let head_ref = format!("refs/heads/{}", pull_request_branch);
-    let base_branch_ref = base_branch
-        .as_ref()
-        .map(|b| format!("refs/heads/{}", b));
+    let base_branch_ref =
+        base_branch.as_ref().map(|b| format!("refs/heads/{}", b));
 
     if let Some(cr) = change_request {
         // We are updating an existing Pull Request

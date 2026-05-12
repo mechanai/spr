@@ -514,9 +514,7 @@ impl GitHub {
         }
     }
 
-    fn pull_request_to_change_request(
-        pr: PullRequest,
-    ) -> ChangeRequest {
+    fn pull_request_to_change_request(pr: PullRequest) -> ChangeRequest {
         ChangeRequest {
             number: pr.number,
             title: pr.title,
@@ -542,9 +540,7 @@ impl GitHub {
                 .into_iter()
                 .map(|(k, v)| {
                     let forge_status = match v {
-                        ReviewStatus::Requested => {
-                            ForgeReviewStatus::Requested
-                        }
+                        ReviewStatus::Requested => ForgeReviewStatus::Requested,
                         ReviewStatus::Approved => ForgeReviewStatus::Approved,
                         ReviewStatus::Rejected => ForgeReviewStatus::Rejected,
                     };
@@ -662,18 +658,11 @@ impl ForgeApi for GitHub {
         GitHub::request_reviewers(self, number, pr_reviewers).await
     }
 
-    async fn add_labels(
-        &self,
-        number: u64,
-        labels: &[String],
-    ) -> Result<()> {
+    async fn add_labels(&self, number: u64, labels: &[String]) -> Result<()> {
         GitHub::add_labels(self, number, labels).await
     }
 
-    async fn get_user(
-        &self,
-        username: &str,
-    ) -> Result<Option<UserInfo>> {
+    async fn get_user(&self, username: &str) -> Result<Option<UserInfo>> {
         match self.get_github_user(username).await {
             Ok(u) => Ok(Some(UserInfo {
                 login: u.login,

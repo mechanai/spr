@@ -30,12 +30,8 @@ pub async fn sync(
     git.check_no_uncommitted_changes()?;
 
     // Fetch current master from upstream
-    output(
-        "🔄",
-        &format!("Fetching {}", config.master_branch_name()),
-    )?;
-    let new_master_oid =
-        forge.fetch_branch(config.master_branch_name())?;
+    output("🔄", &format!("Fetching {}", config.master_branch_name()))?;
+    let new_master_oid = forge.fetch_branch(config.master_branch_name())?;
 
     // Get the prepared commits (these are the local commits above master)
     let mut prepared_commits =

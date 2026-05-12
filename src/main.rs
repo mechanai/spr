@@ -233,44 +233,43 @@ pub async fn spr() -> Result<()> {
             .build()?,
     );
 
-    let mut gh = spr::github::GitHub::new(
+    let gh = spr::github::GitHub::new(
         config.clone(),
         git.clone(),
         github_auth_token,
     );
+    let forge: Box<dyn spr::forge::ForgeApi> = Box::new(gh);
 
     match cli.command {
         Commands::Diff(opts) => {
-            commands::diff::diff(opts, &git, &mut gh, &config).await?;
+            commands::diff::diff(opts, &git, &*forge, &config).await?;
         }
         Commands::Land(opts) => {
-            commands::land::land(opts, &git, &mut gh, &config).await?;
+            commands::land::land(opts, &git, &*forge, &config).await?;
         }
         Commands::Amend(opts) => {
-            commands::amend::amend(opts, &git, &mut gh, &config).await?;
+            commands::amend::amend(opts, &git, &*forge, &config).await?;
         }
         Commands::List => commands::list::list(&config).await?,
         Commands::Patch(opts) => {
-            commands::patch::patch(opts, &git, &mut gh, &config).await?;
+            commands::patch::patch(opts, &git, &*forge, &config).await?;
         }
         Commands::Close(opts) => {
-            commands::close::close(opts, &git, &mut gh, &config).await?;
+            commands::close::close(opts, &git, &*forge, &config).await?;
         }
         Commands::Status(opts) => {
-            commands::status::status(opts, &git, &mut gh, &config).await?;
+            commands::status::status(opts, &git, &*forge, &config).await?;
         }
         Commands::Check(opts) => {
-            commands::check::check(opts, &git, &mut gh, &config).await?;
+            commands::check::check(opts, &git, &*forge, &config).await?;
         }
         Commands::Sync(opts) => {
-            commands::sync::sync(opts, &git, &mut gh, &config).await?;
+            commands::sync::sync(opts, &git, &*forge, &config).await?;
         }
         Commands::Format(opts) => {
-            commands::format::format(opts, &git, &mut gh, &config).await?;
+            commands::format::format(opts, &git, &*forge, &config).await?;
         }
-
-        // The following commands are executed above and return from this
-        // function before it reaches this match.
+        // Init is handled above and returns early.
         Commands::Init => (),
     }
 
