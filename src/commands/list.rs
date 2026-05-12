@@ -40,9 +40,8 @@ fn print_pr_info(
 ) -> Option<()> {
     let term = console::Term::stdout();
     for pr in response_body.data?.search.nodes? {
-        let pr = match pr {
-            Some(crate::commands::list::search_query::SearchQuerySearchNodes::PullRequest(pr)) => pr,
-            _ => continue,
+        let Some(crate::commands::list::search_query::SearchQuerySearchNodes::PullRequest(pr)) = pr else {
+            continue;
         };
         let dummy: String;
         let decision = match pr.review_decision {

@@ -8,7 +8,6 @@
 use color_eyre::eyre::{Result, eyre};
 
 use crate::{
-    git::PreparedCommit,
     message::validate_commit_message,
     output::{output, write_commit_title},
 };
@@ -23,10 +22,11 @@ pub struct AmendOptions {
 pub async fn amend(
     opts: AmendOptions,
     git: &crate::git::Git,
-    gh: &mut crate::github::GitHub,
+    forge: &dyn crate::forge::ForgeApi,
     config: &crate::config::Config,
 ) -> Result<()> {
-    let mut pc = gh.get_prepared_commits()?;
+    let remote_tip = forge.fetch_branch(config.master_branch_name())?;
+    let mut pc = crate::forge::get_prepared_commits(git, config, remote_tip)?;
 
     let len = pc.len();
     if len == 0 {
@@ -44,24 +44,23 @@ pub async fn amend(
     // Request the Pull Request information for each commit (well, those that
     // declare to have Pull Requests). This list is in reverse order, so that
     // below we can pop from the vector as we iterate.
-    let mut pull_requests: Vec<_> = slice
-        .iter()
-        .rev()
-        .map(|pc: &PreparedCommit| {
-            pc.pull_request_number.map(|number| {
-                tokio::task::spawn_local(gh.clone().get_pull_request(number))
-            })
-        })
-        .collect();
+    let mut pull_requests: Vec<Option<Option<crate::forge::ChangeRequest>>> =
+        Vec::new();
+    for pc in slice.iter().rev() {
+        if let Some(number) = pc.pull_request_number {
+            pull_requests.push(Some(forge.get_change_request(number).await?));
+        } else {
+            pull_requests.push(None);
+        }
+    }
 
     let mut failure = false;
 
     for commit in slice.iter_mut() {
         write_commit_title(commit)?;
         let pull_request = pull_requests.pop().flatten();
-        if let Some(pull_request) = pull_request {
-            let pull_request = pull_request.await??;
-            commit.message = pull_request.sections;
+        if let Some(Some(change_request)) = pull_request {
+            commit.message = change_request.sections;
         }
         failure = validate_commit_message(&commit.message, config).is_err()
             || failure;

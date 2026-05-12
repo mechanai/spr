@@ -29,10 +29,13 @@ pub struct PatchOptions {
 pub async fn patch(
     opts: PatchOptions,
     git: &crate::git::Git,
-    gh: &mut crate::github::GitHub,
+    forge: &dyn crate::forge::ForgeApi,
     config: &crate::config::Config,
 ) -> Result<()> {
-    let pr = gh.clone().get_pull_request(opts.pull_request).await?;
+    let pr = forge
+        .get_change_request(opts.pull_request)
+        .await?
+        .ok_or_else(|| color_eyre::eyre::eyre!("PR not found"))?;
     output(
         "#️⃣ ",
         &format!(
@@ -40,8 +43,7 @@ pub async fn patch(
             pr.number,
             pr.sections
                 .get(&MessageSection::Title)
-                .map(|s| &s[..])
-                .unwrap_or("(no title)")
+                .map_or("(no title)", |s| &s[..])
         ),
     )?;
 
@@ -58,7 +60,7 @@ pub async fn patch(
     } else {
         // Current oid of the master branch
         let current_master_oid =
-            gh.remote().fetch_branch(config.master_ref.branch_name())?;
+            forge.fetch_branch(config.master_branch_name())?;
 
         // The parent commit to base the new PR branch on shall be the master
         // commit this PR is based on
@@ -123,7 +125,7 @@ pub async fn patch(
     if !opts.no_checkout {
         // Check out the new branch
         repo.checkout_tree(patch_branch_commit.as_object(), None)?;
-        repo.set_head(&format!("refs/heads/{}", branch_name))?;
+        repo.set_head(&format!("refs/heads/{branch_name}"))?;
         output("✅", "Checked out")?;
     }
 

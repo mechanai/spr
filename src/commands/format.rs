@@ -19,13 +19,15 @@ pub struct FormatOptions {
     all: bool,
 }
 
+#[allow(clippy::unused_async)]
 pub async fn format(
     opts: FormatOptions,
     git: &crate::git::Git,
-    gh: &mut crate::github::GitHub,
+    forge: &dyn crate::forge::ForgeApi,
     config: &crate::config::Config,
 ) -> Result<()> {
-    let mut pc = gh.get_prepared_commits()?;
+    let remote_tip = forge.fetch_branch(config.master_branch_name())?;
+    let mut pc = crate::forge::get_prepared_commits(git, config, remote_tip)?;
 
     let len = pc.len();
     if len == 0 {

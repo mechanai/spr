@@ -32,6 +32,7 @@ pub struct Git {
 }
 
 impl Git {
+    #[must_use]
     pub fn new(repo: git2::Repository) -> Self {
         Self {
             hooks: std::sync::Arc::new(
@@ -42,6 +43,7 @@ impl Git {
         }
     }
 
+    #[must_use]
     pub fn repo(&self) -> &std::sync::Arc<git2::Repository> {
         &self.repo
     }
@@ -87,17 +89,17 @@ impl Git {
 
         for prepared_commit in commits.iter_mut() {
             let commit = self.repo.find_commit(prepared_commit.oid)?;
-            if limit != Some(0) {
-                message = build_commit_message(&prepared_commit.message);
-                if Some(&message[..]) != commit.message() {
-                    updating = true;
-                }
-            } else {
+            if limit == Some(0) {
                 if !updating {
                     return Ok(());
                 }
                 message = String::from_utf8_lossy(commit.message_bytes())
                     .into_owned();
+            } else {
+                message = build_commit_message(&prepared_commit.message);
+                if Some(&message[..]) != commit.message() {
+                    updating = true;
+                }
             }
             limit = limit.map(|n| if n > 0 { n - 1 } else { 0 });
 
@@ -295,15 +297,15 @@ impl Git {
 
     pub fn get_pr_patch_branch_name(&self, pr_number: u64) -> Result<String> {
         let ref_names = self.get_all_ref_names()?;
-        let default_name = format!("PR-{}", pr_number);
-        if !ref_names.contains(&format!("refs/heads/{}", default_name)) {
+        let default_name = format!("PR-{pr_number}");
+        if !ref_names.contains(&format!("refs/heads/{default_name}")) {
             return Ok(default_name);
         }
 
         let mut count = 1;
         loop {
-            let name = format!("PR-{}-{}", pr_number, count);
-            if !ref_names.contains(&format!("refs/heads/{}", name)) {
+            let name = format!("PR-{pr_number}-{count}");
+            if !ref_names.contains(&format!("refs/heads/{name}")) {
                 return Ok(name);
             }
             count += 1;

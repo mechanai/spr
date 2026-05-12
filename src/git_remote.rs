@@ -15,6 +15,7 @@ pub struct GitRemote {
 }
 
 impl GitRemote {
+    #[must_use]
     pub fn new(
         repo: std::sync::Arc<git2::Repository>,
         url: String,
@@ -84,18 +85,18 @@ impl GitRemote {
 
         let mut ref_oids = Vec::<Option<Oid>>::new();
         let mut fetch_oids: HashSet<Oid> =
-            commit_oids.iter().cloned().collect();
+            commit_oids.iter().copied().collect();
 
         self.with_connection(git2::Direction::Fetch, move |connection| {
             if !branch_names.is_empty() {
                 let remote_branches =
                     Self::get_branches_from_connection(connection)?;
 
-                for &branch_name in branch_names.iter() {
-                    let oid = remote_branches.get(branch_name).cloned();
+                for &branch_name in branch_names {
+                    let oid = remote_branches.get(branch_name).copied();
                     ref_oids.push(oid);
                     fetch_oids.extend(oid.iter());
-                    debug!("fetching branch {}: {:?}", branch_name, oid);
+                    debug!("fetching branch {branch_name}: {oid:?}");
                 }
             }
 
@@ -134,11 +135,11 @@ impl GitRemote {
             let mut cbs = RemoteCallbacks::new();
             cbs.push_update_reference(|ref_name, msg| {
                 if let Some(msg) = msg {
-                    let error = format!("Push {} rejected: {}", ref_name, msg);
+                    let error = format!("Push {ref_name} rejected: {msg}");
                     warn!("{}", &error);
                     Err(git2::Error::from_str(&error))
                 } else {
-                    trace!("Pushed {}", ref_name);
+                    trace!("Pushed {ref_name}");
                     Ok(())
                 }
             });
@@ -183,7 +184,7 @@ pub struct PushSpec<'a> {
     pub remote_ref: &'a str,
 }
 
-impl<'a> std::fmt::Display for PushSpec<'a> {
+impl std::fmt::Display for PushSpec<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(oid) = self.oid {
             oid.fmt(f)?;

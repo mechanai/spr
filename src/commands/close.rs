@@ -10,7 +10,6 @@ use color_eyre::eyre::{Result, bail};
 use crate::{
     git::PreparedCommit,
     git_remote::PushSpec,
-    github::{PullRequestState, PullRequestUpdate},
     message::MessageSection,
     output::{output, write_commit_title},
 };
@@ -25,17 +24,19 @@ pub struct CloseOptions {
 pub async fn close(
     opts: CloseOptions,
     git: &crate::git::Git,
-    gh: &mut crate::github::GitHub,
-    _config: &crate::config::Config,
+    forge: &dyn crate::forge::ForgeApi,
+    config: &crate::config::Config,
 ) -> Result<()> {
     let mut result = Ok(());
 
-    let mut prepared_commits = gh.get_prepared_commits()?;
+    let remote_tip = forge.fetch_branch(config.master_branch_name())?;
+    let mut prepared_commits =
+        crate::forge::get_prepared_commits(git, config, remote_tip)?;
 
     if prepared_commits.is_empty() {
         output("👋", "Branch is empty - nothing to do. Good bye!")?;
         return result;
-    };
+    }
 
     if !opts.all {
         // Remove all prepared commits from the vector but the last. So, if
@@ -43,7 +44,7 @@ pub async fn close(
         prepared_commits.drain(0..prepared_commits.len() - 1);
     }
 
-    for prepared_commit in prepared_commits.iter_mut() {
+    for prepared_commit in &mut prepared_commits {
         if result.is_err() {
             break;
         }
@@ -54,7 +55,7 @@ pub async fn close(
         // This makes it easier to run the code to update the local commit message
         // with all the changes that the implementation makes at the end, even if
         // the implementation encounters an error or exits early.
-        result = close_impl(gh, prepared_commit).await;
+        result = close_impl(forge, config, prepared_commit).await;
     }
 
     // This updates the commit message in the local Git repository (if it was
@@ -65,37 +66,35 @@ pub async fn close(
 }
 
 async fn close_impl(
-    gh: &mut crate::github::GitHub,
+    forge: &dyn crate::forge::ForgeApi,
+    config: &crate::config::Config,
     prepared_commit: &mut PreparedCommit,
 ) -> Result<()> {
     let pull_request_number =
         if let Some(number) = prepared_commit.pull_request_number {
-            output("#️⃣ ", &format!("Pull Request #{}", number))?;
+            output("#️⃣ ", &format!("Pull Request #{number}"))?;
             number
         } else {
             bail!("This commit does not refer to a Pull Request.");
         };
 
     // Load Pull Request information
-    let pull_request = gh.clone().get_pull_request(pull_request_number).await?;
+    let change_request = forge
+        .get_change_request(pull_request_number)
+        .await?
+        .ok_or_else(|| {
+        color_eyre::eyre::eyre!("PR #{} not found", pull_request_number)
+    })?;
 
-    if pull_request.state != PullRequestState::Open {
+    if change_request.state != crate::forge::ChangeRequestState::Open {
         bail!("This Pull Request is already closed!");
     }
 
     output("📖", "Getting started...")?;
 
-    let base_is_master = pull_request.base.is_master_branch();
+    let base_is_master = config.is_master_branch(&change_request.base_ref_name);
 
-    let result = gh
-        .update_pull_request(
-            pull_request_number,
-            PullRequestUpdate {
-                state: Some(PullRequestState::Closed),
-                ..Default::default()
-            },
-        )
-        .await;
+    let result = forge.close_change_request(pull_request_number).await;
 
     match result {
         Ok(()) => (),
@@ -104,7 +103,7 @@ async fn close_impl(
 
             return Err(error);
         }
-    };
+    }
 
     output("📕", "Closed!")?;
 
@@ -112,19 +111,22 @@ async fn close_impl(
     prepared_commit.message.remove(&MessageSection::PullRequest);
     prepared_commit.message.remove(&MessageSection::ReviewedBy);
 
+    let head_ref = format!("refs/heads/{}", change_request.head_ref_name);
+    let base_ref = format!("refs/heads/{}", change_request.base_ref_name);
+
     let mut push_specs = vec![PushSpec {
         oid: None,
-        remote_ref: pull_request.head.on_github(),
+        remote_ref: &head_ref,
     }];
 
     if !base_is_master {
         push_specs.push(PushSpec {
             oid: None,
-            remote_ref: pull_request.base.on_github(),
+            remote_ref: &base_ref,
         });
     }
 
-    gh.remote().push_to_remote(&push_specs)?;
+    forge.push_to_remote(&push_specs)?;
 
     Ok(())
 }

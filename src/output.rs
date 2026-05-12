@@ -5,14 +5,30 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use color_eyre::eyre::Result;
 
 use crate::{git::PreparedCommit, message::MessageSection};
 
-pub fn output(icon: &str, text: &str) -> Result<()> {
-    let term = console::Term::stdout();
+static QUIET: AtomicBool = AtomicBool::new(false);
 
-    let bullet = format!("  {}  ", icon);
+/// Set quiet mode globally. When quiet, only essential output is printed.
+pub fn set_quiet(quiet: bool) {
+    QUIET.store(quiet, Ordering::Relaxed);
+}
+
+pub fn is_quiet() -> bool {
+    QUIET.load(Ordering::Relaxed)
+}
+
+pub fn output(icon: &str, text: &str) -> Result<()> {
+    if is_quiet() {
+        return Ok(());
+    }
+
+    let term = console::Term::stderr();
+    let bullet = format!("  {icon}  ");
     let indent = console::measure_text_width(&bullet);
     let indent_string = " ".repeat(indent);
     let options = textwrap::Options::new((term.size().1 as usize) - indent * 2)
@@ -26,8 +42,19 @@ pub fn output(icon: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
+/// Print essential output that is always shown, even in quiet mode.
+/// Used for PR URLs, numbers, and other machine-relevant data.
+pub fn output_essential(text: &str) -> Result<()> {
+    println!("{text}");
+    Ok(())
+}
+
 pub fn write_commit_title(prepared_commit: &PreparedCommit) -> Result<()> {
-    let term = console::Term::stdout();
+    if is_quiet() {
+        return Ok(());
+    }
+
+    let term = console::Term::stderr();
     term.write_line(&format!(
         "{} {}",
         console::style(&prepared_commit.short_id).italic(),
@@ -35,10 +62,24 @@ pub fn write_commit_title(prepared_commit: &PreparedCommit) -> Result<()> {
             prepared_commit
                 .message
                 .get(&MessageSection::Title)
-                .map(|s| &s[..])
-                .unwrap_or("(untitled)"),
+                .map_or("(untitled)", |s| &s[..]),
         )
         .yellow()
     ))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quiet_mode_toggle() {
+        set_quiet(false);
+        assert!(!is_quiet());
+        set_quiet(true);
+        assert!(is_quiet());
+        set_quiet(false);
+        assert!(!is_quiet());
+    }
 }

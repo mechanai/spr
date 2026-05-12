@@ -58,6 +58,93 @@ To squash-merge an open pull request, run `spr land`.
 
 For more information on spr commands and options, run `spr help`. For more information on a specific spr command, run `spr help <COMMAND>` (e.g. `spr help diff`).
 
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `spr init` | Interactive setup for configuring spr in a repository |
+| `spr diff` | Create or update a Pull Request for the HEAD commit |
+| `spr land` | Merge an approved Pull Request |
+| `spr status` | Show PR review status for HEAD commit |
+| `spr check` | Validate commit message and optionally test cherry-pick viability |
+| `spr sync` | Rebase local branch onto upstream and optionally update PRs |
+| `spr amend` | Update local commit message from GitHub |
+| `spr format` | Reformat commit message |
+| `spr list` | List open Pull Requests and their review status |
+| `spr patch` | Create a branch from an existing Pull Request |
+| `spr close` | Close a Pull Request |
+
+### Working with stacks
+
+```shell
+# Create/update PRs for all commits in the branch
+spr diff --all
+
+# Limit to the top N commits
+spr diff --all --count 3
+
+# Land all approved PRs bottom-to-top
+spr land --all
+
+# Check if all PRs are approved (useful in CI)
+spr status --ready
+
+# Rebase and update all PRs in one step
+spr sync --update
+```
+
+### Automation and CI
+
+spr can be driven non-interactively by AI agents or CI systems:
+
+```shell
+# Prevent interactive prompts
+spr diff --non-interactive
+# or
+SPR_NON_INTERACTIVE=1 spr diff
+
+# Suppress decorative output, only print essential data (URLs, PR numbers)
+spr diff --quiet
+# or
+SPR_QUIET=1 spr diff
+```
+
+Exit codes for scripting:
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Generic error |
+| 2 | Auth/config issue |
+| 3 | Merge conflict |
+| 4 | PR state issue (closed, not approved) |
+| 130 | User abort |
+
+## Configuration
+
+Git config options (set via `git config`):
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `spr.githubAuthToken` | GitHub personal access token | (from `GITHUB_TOKEN` env or gh CLI) |
+| `spr.githubRepository` | Repository as `owner/repo` | (required) |
+| `spr.githubMasterBranch` | Target branch name | `master` |
+| `spr.branchPrefix` | Prefix for PR branches | `spr/<username>/` |
+| `spr.createDraftPRs` | Create new PRs as drafts | `false` |
+| `spr.defaultReviewers` | Comma-separated reviewer list | (none) |
+| `spr.mergeMethod` | `squash`, `rebase`, or `merge` | `squash` |
+| `spr.requireApproval` | Require approval before landing | `false` |
+| `spr.requireTestPlan` | Require Test Plan in commit message | `true` |
+
+### Authentication
+
+spr resolves GitHub tokens in this order:
+
+1. `--github-auth-token` CLI flag
+2. `GITHUB_TOKEN` environment variable
+3. `~/.config/gh/hosts.yml` (gh CLI config)
+4. `spr.githubAuthToken` git config (set by `spr init`)
+
 ## Contributing
 
 Feel free to submit an issue on [GitHub](https://github.com/spacedentist/spr) if you have found a problem. If you can even provide a fix, please raise a pull request!
