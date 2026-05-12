@@ -10,6 +10,7 @@ edition = "2024"
 exclude = [".github", ".gitignore"]
 
 [dependencies]
+async-trait = "0.1.88"
 bytes = "1.10.1"
 clap = { version = "^4.5.47", features = ["derive", "wrap_help"] }
 color-eyre = "0.6.5"
@@ -35,6 +36,9 @@ serde = "^1.0.225"
 textwrap = "^0.16.2"
 tokio = { version = "^1.47.1", features = ["macros", "rt", "time"] }
 unicode-normalization = "^0.1.24"
+
+[dev-dependencies]
+unimock = { version = "0.6.8", features = ["fragile"] }
 
 # Config for cargo-dist (binary distribution)
 [package.metadata.dist]
