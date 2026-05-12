@@ -340,7 +340,7 @@ async fn land_one(
             forge
                 .merge_change_request(
                     pull_request_number,
-                    config.merge_method.clone(),
+                    config.merge_method,
                     &change_request.title,
                     &build_github_body_for_merging(&change_request.sections),
                     pr_head_oid,

@@ -9,7 +9,7 @@ use color_eyre::eyre::Result;
 
 use crate::github::GitHubBranch;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MergeMethod {
     #[default]
     Squash,
@@ -23,7 +23,13 @@ impl MergeMethod {
         match s.to_lowercase().as_str() {
             "rebase" => Self::Rebase,
             "merge" => Self::Merge,
-            _ => Self::Squash,
+            _ => {
+                log::warn!(
+                    "Unknown merge method '{}', defaulting to squash",
+                    s
+                );
+                Self::Squash
+            }
         }
     }
 }
