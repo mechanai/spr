@@ -32,10 +32,10 @@ pub async fn sync(
     // Fetch current master from upstream
     output(
         "🔄",
-        &format!("Fetching {}", config.master_ref.branch_name()),
+        &format!("Fetching {}", config.master_branch_name()),
     )?;
     let new_master_oid =
-        gh.remote().fetch_branch(config.master_ref.branch_name())?;
+        gh.remote().fetch_branch(config.master_branch_name())?;
 
     // Get the prepared commits (these are the local commits above master)
     let mut prepared_commits = gh.get_prepared_commits()?;
@@ -55,7 +55,7 @@ pub async fn sync(
             &format!(
                 "Rebasing {} commit(s) onto {}",
                 prepared_commits.len(),
-                config.master_ref.branch_name()
+                config.master_branch_name()
             ),
         )?;
 

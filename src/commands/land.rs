@@ -99,7 +99,7 @@ async fn land_one(
              this commit, rebase it so that it is a direct child of {master}.
              Alternatively, if you used the `--cherry-pick` option with `spr \
              diff`, then you can pass it to `spr land`, too.",
-            master = &config.master_ref.branch_name(),
+            master = &config.master_branch_name(),
         )));
     }
 
@@ -135,7 +135,7 @@ async fn land_one(
 
     // Fetch current master from GitHub.
     let current_master =
-        gh.remote().fetch_branch(config.master_ref.branch_name())?;
+        gh.remote().fetch_branch(config.master_branch_name())?;
 
     let base_is_master = pull_request.base.is_master_branch();
     let index = git.cherrypick(prepared_commit.oid, current_master)?;
@@ -144,7 +144,7 @@ async fn land_one(
         return Err(Error::msg(formatdoc!(
             "This commit cannot be applied on top of the '{master}' branch.
              Please rebase this commit.{unlanded}",
-            master = &config.master_ref.branch_name(),
+            master = &config.master_branch_name(),
             unlanded = if based_on_unlanded_commits {
                 " You may also have to land commits that this commit depends on first."
             } else {
@@ -261,7 +261,7 @@ async fn land_one(
         gh.update_pull_request(
             pull_request_number,
             PullRequestUpdate {
-                base: Some(config.master_ref.branch_name().to_string()),
+                base: Some(config.master_branch_name().to_string()),
                 ..Default::default()
             },
         )

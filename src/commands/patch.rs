@@ -57,7 +57,7 @@ pub async fn patch(
     } else {
         // Current oid of the master branch
         let current_master_oid =
-            gh.remote().fetch_branch(config.master_ref.branch_name())?;
+            gh.remote().fetch_branch(config.master_branch_name())?;
 
         // The parent commit to base the new PR branch on shall be the master
         // commit this PR is based on

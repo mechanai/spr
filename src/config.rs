@@ -28,10 +28,11 @@ impl MergeMethod {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Config {
     pub owner: String,
     pub repo: String,
+    pub master_branch: String,
     pub master_ref: GitHubBranch,
     pub branch_prefix: String,
     pub auth_token: String,
@@ -41,6 +42,25 @@ pub struct Config {
     pub non_interactive: bool,
     pub default_reviewers: Vec<String>,
     pub merge_method: MergeMethod,
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("owner", &self.owner)
+            .field("repo", &self.repo)
+            .field("master_branch", &self.master_branch)
+            .field("master_ref", &self.master_ref)
+            .field("branch_prefix", &self.branch_prefix)
+            .field("auth_token", &"[REDACTED]")
+            .field("require_approval", &self.require_approval)
+            .field("require_test_plan", &self.require_test_plan)
+            .field("create_draft_prs", &self.create_draft_prs)
+            .field("non_interactive", &self.non_interactive)
+            .field("default_reviewers", &self.default_reviewers)
+            .field("merge_method", &self.merge_method)
+            .finish()
+    }
 }
 
 impl Config {
@@ -64,6 +84,7 @@ impl Config {
         Self {
             owner,
             repo,
+            master_branch: master_branch.to_owned(),
             master_ref,
             branch_prefix,
             auth_token,
@@ -74,6 +95,17 @@ impl Config {
             default_reviewers,
             merge_method,
         }
+    }
+
+    #[must_use]
+    pub fn master_branch_name(&self) -> &str {
+        &self.master_branch
+    }
+
+    #[must_use]
+    pub fn is_master_branch(&self, branch: &str) -> bool {
+        let name = branch.strip_prefix("refs/heads/").unwrap_or(branch);
+        name == self.master_branch
     }
 
     #[must_use]
@@ -239,5 +271,20 @@ mod tests {
         assert_eq!(MergeMethod::parse("Rebase"), MergeMethod::Rebase);
         assert_eq!(MergeMethod::parse("unknown"), MergeMethod::Squash);
         assert_eq!(MergeMethod::parse(""), MergeMethod::Squash);
+    }
+
+    #[test]
+    fn test_is_master_branch() {
+        let config = config_factory();
+        assert!(config.is_master_branch("master"));
+        assert!(config.is_master_branch("refs/heads/master"));
+        assert!(!config.is_master_branch("develop"));
+        assert!(!config.is_master_branch("spr/main/foo"));
+    }
+
+    #[test]
+    fn test_master_branch_name() {
+        let config = config_factory();
+        assert_eq!(config.master_branch_name(), "master");
     }
 }
