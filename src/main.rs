@@ -66,6 +66,14 @@ pub struct Cli {
     #[clap(long, short = 'q')]
     quiet: bool,
 
+    /// Preview actions without performing them
+    #[clap(long)]
+    dry_run: bool,
+
+    /// Show detailed progress for each action
+    #[clap(long)]
+    verbose: bool,
+
     #[clap(subcommand)]
     command: Commands,
 }
@@ -117,6 +125,10 @@ pub async fn spr() -> Result<()> {
             .ok()
             .is_some_and(|v| v == "1" || v == "true");
     spr::output::set_quiet(quiet);
+
+    if cli.quiet && cli.verbose {
+        color_eyre::eyre::bail!("--quiet and --verbose are mutually exclusive");
+    }
 
     if let Some(path) = &cli.cd
         && let Err(err) = std::env::set_current_dir(path)
@@ -238,7 +250,13 @@ pub async fn spr() -> Result<()> {
         git.clone(),
         github_auth_token,
     );
-    let forge: Box<dyn spr::forge::ForgeApi> = Box::new(gh);
+    let forge: Box<dyn spr::forge::ForgeApi> = if cli.dry_run {
+        Box::new(spr::forge::DryRunForge::new(Box::new(gh), cli.verbose))
+    } else if cli.verbose {
+        Box::new(spr::forge::VerboseForge::new(gh))
+    } else {
+        Box::new(gh)
+    };
 
     match cli.command {
         Commands::Diff(opts) => {
