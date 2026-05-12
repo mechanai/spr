@@ -7,6 +7,13 @@
 
 use std::collections::HashMap;
 
+use async_trait::async_trait;
+use color_eyre::Result;
+use git2::Oid;
+
+use crate::config::MergeMethod;
+use crate::git::Git;
+use crate::git_remote::PushSpec;
 use crate::message::MessageSectionsMap;
 
 /// Review status for a change request reviewer.
@@ -96,6 +103,113 @@ pub struct Mergeability {
     pub base_ref_name: String,
     pub head_oid: git2::Oid,
     pub merge_commit: Option<git2::Oid>,
+}
+
+/// Forge-agnostic API trait for interacting with a code hosting platform.
+///
+/// Implementations exist for GitHub (and in the future, Forgejo, etc.).
+/// Commands use `&dyn ForgeApi` so they are decoupled from any specific forge.
+#[async_trait(?Send)]
+pub(crate) trait ForgeApi {
+    // Change request lifecycle
+    async fn create_change_request(
+        &self,
+        message: &MessageSectionsMap,
+        base: &str,
+        head: &str,
+        draft: bool,
+        stack_info: Option<&str>,
+    ) -> Result<u64>;
+
+    async fn update_change_request(
+        &self,
+        number: u64,
+        update: &ChangeRequestUpdate,
+        stack_info: Option<&str>,
+    ) -> Result<()>;
+
+    async fn get_change_request(
+        &self,
+        number: u64,
+    ) -> Result<Option<ChangeRequest>>;
+
+    async fn close_change_request(&self, number: u64) -> Result<()>;
+
+    async fn merge_change_request(
+        &self,
+        number: u64,
+        method: MergeMethod,
+        title: &str,
+        message: &str,
+        expected_head_oid: Oid,
+    ) -> Result<()>;
+
+    async fn get_mergeability(&self, number: u64) -> Result<Mergeability>;
+
+    // Reviewers and labels
+    async fn request_reviewers(
+        &self,
+        number: u64,
+        reviewers: &ReviewerRequest,
+    ) -> Result<()>;
+
+    async fn add_labels(
+        &self,
+        number: u64,
+        labels: &[String],
+    ) -> Result<()>;
+
+    // User/team lookup
+    async fn get_user(&self, username: &str) -> Result<Option<UserInfo>>;
+    async fn get_team(
+        &self,
+        org: &str,
+        team_slug: &str,
+    ) -> Result<Option<TeamInfo>>;
+
+    // Git remote operations
+    fn push_to_remote(&self, refs: &[PushSpec<'_>]) -> Result<()>;
+    fn fetch_from_remote(
+        &self,
+        branch_names: &[&str],
+        commit_oids: &[Oid],
+    ) -> Result<Vec<Option<Oid>>>;
+    fn fetch_branch(&self, branch_name: &str) -> Result<Oid>;
+    fn find_unused_branch_name(
+        &self,
+        branch_prefix: &str,
+        slug: &str,
+    ) -> Result<String>;
+    fn get_branches(&self) -> Result<HashMap<String, Oid>>;
+
+    // Display — forge-native terminology for user-facing output
+    fn change_request_term(&self) -> &str;
+}
+
+/// Forge-neutral user info.
+#[derive(Debug, Clone)]
+pub struct UserInfo {
+    pub login: String,
+    pub name: Option<String>,
+    pub is_collaborator: bool,
+}
+
+/// Forge-neutral team info.
+#[derive(Debug, Clone)]
+pub struct TeamInfo {
+    pub slug: String,
+    pub name: String,
+}
+
+/// Prepare commits for stacking — local git only, no network I/O.
+///
+/// Call `forge.fetch_branch()` first to get `remote_tip`, then pass it here.
+pub fn get_prepared_commits(
+    git: &Git,
+    config: &crate::config::Config,
+    remote_tip: Oid,
+) -> Result<Vec<crate::git::PreparedCommit>> {
+    git.get_prepared_commits(config, remote_tip)
 }
 
 #[cfg(test)]
