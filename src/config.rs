@@ -24,10 +24,7 @@ impl MergeMethod {
             "rebase" => Self::Rebase,
             "merge" => Self::Merge,
             _ => {
-                log::warn!(
-                    "Unknown merge method '{}', defaulting to squash",
-                    s
-                );
+                log::warn!("Unknown merge method '{s}', defaulting to squash");
                 Self::Squash
             }
         }
