@@ -91,6 +91,10 @@ pub async fn diff(
     forge: &dyn crate::forge::ForgeApi,
     config: &crate::config::Config,
 ) -> Result<()> {
+    if opts.count.is_some() && !opts.all {
+        bail!("--count requires --all");
+    }
+
     // Abort right here if the local Git repository is not clean
     git.check_no_uncommitted_changes()?;
 

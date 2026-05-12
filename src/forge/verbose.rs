@@ -116,6 +116,9 @@ impl<T: ForgeApi> ForgeApi for VerboseForge<T> {
         number: u64,
         reviewers: &ReviewerRequest,
     ) -> Result<()> {
+        if reviewers.users.is_empty() && reviewers.teams.is_empty() {
+            return self.inner.request_reviewers(number, reviewers).await;
+        }
         let all: Vec<&str> = reviewers
             .users
             .iter()

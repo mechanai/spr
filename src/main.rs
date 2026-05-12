@@ -109,7 +109,7 @@ enum Commands {
     /// Show status of the Pull Request for HEAD commit
     Status(commands::status::StatusOptions),
 
-    /// Validate commit and check for conflicts without pushing
+    /// Validate commit message and check for cherry-pick conflicts (fetches from remote)
     Check(commands::check::CheckOptions),
 
     /// Rebase local branch onto upstream master and optionally update PRs
