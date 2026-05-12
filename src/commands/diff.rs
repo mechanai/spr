@@ -198,11 +198,7 @@ pub async fn diff(
             continue;
         }
 
-        let change_request = if let Some(task) = pull_request_task {
-            task // already resolved
-        } else {
-            None
-        };
+        let change_request = pull_request_task.flatten();
 
         write_commit_title(prepared_commit)?;
 
@@ -658,9 +654,9 @@ async fn diff_impl(
         &pr_commit_parents[..],
     )?;
 
-    let head_ref = format!("refs/heads/{}", pull_request_branch);
+    let head_ref = format!("refs/heads/{pull_request_branch}");
     let base_branch_ref =
-        base_branch.as_ref().map(|b| format!("refs/heads/{}", b));
+        base_branch.as_ref().map(|b| format!("refs/heads/{b}"));
 
     if let Some(cr) = change_request {
         // We are updating an existing Pull Request

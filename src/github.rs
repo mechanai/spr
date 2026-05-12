@@ -751,7 +751,7 @@ impl ForgeApi for GitHub {
         self.git_remote.get_branches()
     }
 
-    fn change_request_term(&self) -> &str {
+    fn change_request_term(&self) -> &'static str {
         "PR"
     }
 }
