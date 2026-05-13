@@ -54,8 +54,8 @@ These flags apply to all subcommands:
 | `--branch-prefix PREFIX` | Override PR branch prefix |
 | `--non-interactive` | Never prompt (also `SPR_NON_INTERACTIVE=1`) |
 | `--quiet` / `-q` | Essential output only (also `SPR_QUIET=1`) |
-| `--dry-run` | Preview without side effects |
-| `--verbose` | Detailed progress logging |
+| `--dry-run` | Preview without side effects (also `SPR_DRY_RUN=1`) |
+| `--verbose` | Detailed progress logging (also `SPR_VERBOSE=1`) |
 
 ## Workflow for AI Agents
 

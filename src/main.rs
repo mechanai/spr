@@ -68,11 +68,13 @@ pub struct Cli {
     #[clap(long, short = 'q')]
     quiet: bool,
 
-    /// Preview actions without performing them
+    /// Preview actions without performing them.
+    /// Also enabled by setting `SPR_DRY_RUN=1`.
     #[clap(long)]
     dry_run: bool,
 
-    /// Show detailed progress for each action
+    /// Show detailed progress for each action.
+    /// Also enabled by setting `SPR_VERBOSE=1`.
     #[clap(long)]
     verbose: bool,
 
@@ -128,7 +130,17 @@ pub async fn spr() -> Result<()> {
             .is_some_and(|v| v == "1" || v == "true");
     spr::output::set_quiet(quiet);
 
-    if cli.quiet && cli.verbose {
+    let verbose = cli.verbose
+        || std::env::var("SPR_VERBOSE")
+            .ok()
+            .is_some_and(|v| v == "1" || v == "true");
+
+    let dry_run = cli.dry_run
+        || std::env::var("SPR_DRY_RUN")
+            .ok()
+            .is_some_and(|v| v == "1" || v == "true");
+
+    if quiet && verbose {
         color_eyre::eyre::bail!("--quiet and --verbose are mutually exclusive");
     }
 
@@ -261,9 +273,9 @@ pub async fn spr() -> Result<()> {
         git.clone(),
         github_auth_token,
     );
-    let forge: Box<dyn spr::forge::ForgeApi> = if cli.dry_run {
-        Box::new(spr::forge::DryRunForge::new(Box::new(gh), cli.verbose))
-    } else if cli.verbose {
+    let forge: Box<dyn spr::forge::ForgeApi> = if dry_run {
+        Box::new(spr::forge::DryRunForge::new(Box::new(gh), verbose))
+    } else if verbose {
         Box::new(spr::forge::VerboseForge::new(gh))
     } else {
         Box::new(gh)
