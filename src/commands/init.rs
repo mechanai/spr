@@ -106,6 +106,16 @@ pub async fn init() -> Result<()> {
     let github_user = octocrab.current().user().await?;
 
     output("👋", &formatdoc!("Hello {}!", github_user.login))?;
+    output(
+        "ℹ️",
+        &formatdoc!(
+            "Token resolution order (first match wins):
+             1. --github-auth-token CLI flag
+             2. GITHUB_TOKEN environment variable
+             3. ~/.config/gh/hosts.yml (gh CLI config)
+             4. spr.githubAuthToken git config (just configured above)"
+        ),
+    )?;
 
     // Name of the GitHub repo
 
