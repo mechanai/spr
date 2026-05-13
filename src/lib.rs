@@ -17,6 +17,7 @@
 
 pub mod commands;
 pub mod config;
+pub mod error;
 pub mod forge;
 pub mod git;
 pub mod git_remote;

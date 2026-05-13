@@ -5,9 +5,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-use color_eyre::eyre::{Result, bail};
+use color_eyre::eyre::Result;
 
 use crate::{
+    error::SprError,
     git::PreparedCommit,
     git_remote::PushSpec,
     message::MessageSection,
@@ -75,7 +76,7 @@ async fn close_impl(
             output("#️⃣ ", &format!("Pull Request #{number}"))?;
             number
         } else {
-            bail!("This commit does not refer to a Pull Request.");
+            Err(SprError::ChangeRequestState("This commit does not refer to a Pull Request.".into()))?
         };
 
     // Load Pull Request information
@@ -87,7 +88,7 @@ async fn close_impl(
     })?;
 
     if change_request.state != crate::forge::ChangeRequestState::Open {
-        bail!("This Pull Request is already closed!");
+        Err(SprError::ChangeRequestState("This Pull Request is already closed!".into()))?;
     }
 
     output("📖", "Getting started...")?;

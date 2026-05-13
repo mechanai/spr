@@ -9,6 +9,7 @@ use std::collections::HashSet;
 use std::iter::zip;
 
 use color_eyre::eyre::{Error, Result, WrapErr as _, bail, eyre};
+use crate::error::SprError;
 
 use crate::{
     forge::{
@@ -617,7 +618,7 @@ async fn diff_impl(
             };
 
             if input.is_empty() {
-                bail!("Aborted as per user request");
+                Err(SprError::UserAbort)?;
             }
 
             message_on_prompt.clone_from(&input);

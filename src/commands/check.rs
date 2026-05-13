@@ -7,7 +7,7 @@
 
 use color_eyre::eyre::{Result, eyre};
 
-use crate::{message::validate_commit_message, output::output_essential};
+use crate::{error::SprError, message::validate_commit_message, output::output_essential};
 
 #[derive(Debug, clap::Parser)]
 pub struct CheckOptions {
@@ -57,7 +57,7 @@ pub async fn check(
         let index = git.cherrypick(head_commit.oid, master_oid)?;
         if index.has_conflicts() {
             output_essential("cherry-pick: conflict")?;
-            return Err(eyre!("Cherry-pick would conflict"));
+            return Err(SprError::Conflict("Cherry-pick would conflict".into()).into());
         }
         output_essential("cherry-pick: clean")?;
     }
