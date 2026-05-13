@@ -26,14 +26,36 @@ Each commit = one PR. Amend a commit → `spr diff` updates its PR. Rebase → a
 |------|---------|
 | Create/update PR for HEAD | `spr diff` |
 | Create/update all PRs in stack | `spr diff --all` |
+| Create PR as draft | `spr diff --draft` |
+| Update PR title/body from commit | `spr diff --update-message` |
+| Select specific commits | `spr diff --range HEAD~3..HEAD~1` |
+| Limit commits processed | `spr diff --all --count 3` |
 | Land bottom PR | `spr land` |
 | Land all approved PRs | `spr land --all` |
+| Close PR for HEAD commit | `spr close` |
 | Rebase + update all PRs | `spr sync --update` |
 | Check status of stack | `spr status --all` |
 | Check if all approved | `spr status --ready` (exit code 0 = ready) |
 | Validate commit before push | `spr check` |
 | Validate + test cherry-pick | `spr check --cherry-pick` |
-| Limit commits processed | `spr diff --all --count 3` |
+| Preview without side effects | `spr diff --all --dry-run` |
+| Detailed progress logging | `spr diff --all --verbose` |
+
+## Global CLI Flags
+
+These flags apply to all subcommands:
+
+| Flag | Purpose |
+|------|---------|
+| `--cd DIR` | Change to DIR before running |
+| `--github-auth-token TOKEN` | Override auth token |
+| `--github-repository OWNER/REPO` | Override repository |
+| `--github-master-branch BRANCH` | Override target branch |
+| `--branch-prefix PREFIX` | Override PR branch prefix |
+| `--non-interactive` | Never prompt (also `SPR_NON_INTERACTIVE=1`) |
+| `--quiet` / `-q` | Essential output only (also `SPR_QUIET=1`) |
+| `--dry-run` | Preview without side effects |
+| `--verbose` | Detailed progress logging |
 
 ## Workflow for AI Agents
 
@@ -65,13 +87,38 @@ Always use one of:
 
 This prevents blocking prompts. Without it, `spr diff` will prompt for a commit message when updating existing PRs.
 
+### Dry-run mode (preview without side effects)
+
+```bash
+spr diff --all --dry-run
+# Previews what would happen without creating/updating PRs or rewriting commits
+# Read operations (fetching existing PRs) still work; writes are stubbed
+```
+
+Dry-run prevents both GitHub API writes and local commit rewriting (no PR URLs baked into commits). Combine with `--verbose` for maximum visibility:
+
+```bash
+spr diff --all --dry-run --verbose
+```
+
+### Verbose mode (detailed progress)
+
+```bash
+spr diff --all --verbose
+# Logs each API call and action as it happens
+```
+
+Cannot be combined with `--quiet`.
+
 ### Quiet mode for parsing output
 
 ```bash
-SPR_QUIET=1 spr diff --all
+spr diff --all --quiet
 # Only outputs essential data: PR URLs, numbers
 # Format: owner/repo#123 https://github.com/owner/repo/pull/123
 ```
+
+Also available as `SPR_QUIET=1` environment variable.
 
 ### Landing in order
 
@@ -122,10 +169,11 @@ Git config keys (set via `git config`):
 
 ## Auth
 
-Token resolution order:
-1. `GITHUB_TOKEN` environment variable
-2. `~/.config/gh/hosts.yml` (gh CLI)
-3. `spr.githubAuthToken` git config
+Token resolution order (first match wins):
+1. `--github-auth-token` CLI flag
+2. `GITHUB_TOKEN` environment variable
+3. `~/.config/gh/hosts.yml` (gh CLI)
+4. `spr.githubAuthToken` git config
 
 For CI/automation, set `GITHUB_TOKEN`.
 
@@ -162,6 +210,26 @@ spr diff --cherry-pick   # PR shows only this commit's changes
 spr land --cherry-pick   # Land even if parent isn't on main
 ```
 
+### Close a PR
+```bash
+spr close                # Close the PR for HEAD commit
+```
+
+### Select specific commits in a range
+```bash
+spr diff --range HEAD~4..HEAD~1   # Only process commits in this revspec
+```
+
+### Force-update PR description from commit
+```bash
+spr diff --update-message  # Overwrite PR title/body with current commit message
+```
+
+### Sync with custom update message
+```bash
+spr sync --update -m "rebase onto latest main"
+```
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -170,3 +238,4 @@ spr land --cherry-pick   # Land even if parent isn't on main
 | Exit code 3 | Merge conflict | Rebase locally, resolve, then `spr diff` |
 | "cannot land" | Parent not on main | Use `spr land --cherry-pick` or land parent first |
 | Prompt blocks CI | Missing non-interactive | Add `--non-interactive` or `SPR_NON_INTERACTIVE=1` |
+| Unsure what spr will do | Want to preview | Use `--dry-run` (add `--verbose` for detail) |
