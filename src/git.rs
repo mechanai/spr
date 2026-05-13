@@ -53,11 +53,11 @@ impl Git {
         self.hooks.as_ref()
     }
 
-    pub fn get_commit_oids(&self, master_oid: Oid) -> Result<Vec<Oid>> {
+    pub fn get_commit_oids(&self, default_branch_oid: Oid) -> Result<Vec<Oid>> {
         let mut walk = self.repo.revwalk()?;
         walk.set_sorting(git2::Sort::TOPOLOGICAL.union(git2::Sort::REVERSE))?;
         walk.push_head()?;
-        walk.hide(master_oid)?;
+        walk.hide(default_branch_oid)?;
 
         Ok(walk.collect::<std::result::Result<Vec<Oid>, _>>()?)
     }
@@ -65,9 +65,9 @@ impl Git {
     pub fn get_prepared_commits(
         &self,
         config: &Config,
-        master_oid: Oid,
+        default_branch_oid: Oid,
     ) -> Result<Vec<PreparedCommit>> {
-        self.get_commit_oids(master_oid)?
+        self.get_commit_oids(default_branch_oid)?
             .into_iter()
             .map(|oid| self.prepare_commit(config, oid))
             .collect()
@@ -204,7 +204,7 @@ impl Git {
         // this case we fail early here, before we update any references. The
         // result is that the worktree is unchanged and neither the branch nor
         // HEAD gets updated. We can just prompt the user to rebase manually.
-        // That's a fine solution. If the user tries "git rebase origin/master"
+        // That's a fine solution. If the user tries "git rebase origin/<branch>"
         // straight away, they will find that it also fails because of local
         // worktree changes. Once the user has dealt with those (revert, stash
         // or commit), the rebase should work nicely.
@@ -332,21 +332,21 @@ impl Git {
         Ok(tree_oid)
     }
 
-    pub fn find_master_base(
+    pub fn find_default_branch_base(
         &self,
         commit_oid: Oid,
-        master_oid: Oid,
+        default_branch_oid: Oid,
     ) -> Result<Option<Oid>> {
         let mut commit_ancestors = HashSet::new();
         let mut commit_oid = Some(commit_oid);
-        let mut master_ancestors = HashSet::new();
-        let mut master_queue = VecDeque::new();
-        master_ancestors.insert(master_oid);
-        master_queue.push_back(master_oid);
+        let mut default_branch_ancestors = HashSet::new();
+        let mut default_branch_queue = VecDeque::new();
+        default_branch_ancestors.insert(default_branch_oid);
+        default_branch_queue.push_back(default_branch_oid);
 
-        while !(commit_oid.is_none() && master_queue.is_empty()) {
+        while !(commit_oid.is_none() && default_branch_queue.is_empty()) {
             if let Some(oid) = commit_oid {
-                if master_ancestors.contains(&oid) {
+                if default_branch_ancestors.contains(&oid) {
                     return Ok(Some(oid));
                 }
                 commit_ancestors.insert(oid);
@@ -357,15 +357,15 @@ impl Git {
                 };
             }
 
-            if let Some(oid) = master_queue.pop_front() {
+            if let Some(oid) = default_branch_queue.pop_front() {
                 if commit_ancestors.contains(&oid) {
                     return Ok(Some(oid));
                 }
                 let commit = self.repo.find_commit(oid)?;
                 for oid in commit.parent_ids() {
-                    if !master_ancestors.contains(&oid) {
-                        master_queue.push_back(oid);
-                        master_ancestors.insert(oid);
+                    if !default_branch_ancestors.contains(&oid) {
+                        default_branch_queue.push_back(oid);
+                        default_branch_ancestors.insert(oid);
                     }
                 }
             }

@@ -43,7 +43,7 @@ pub async fn land(
     // --all: land commits from bottom to top
     let mut landed = 0u32;
     loop {
-        let remote_tip = forge.fetch_branch(config.master_branch_name())?;
+        let remote_tip = forge.fetch_branch(config.default_branch_name())?;
         let prepared_commits =
             crate::forge::get_prepared_commits(git, config, remote_tip)?;
         if prepared_commits.is_empty() {
@@ -94,7 +94,7 @@ async fn land_one(
     config: &crate::config::Config,
 ) -> Result<()> {
     git.check_no_uncommitted_changes()?;
-    let remote_tip = forge.fetch_branch(config.master_branch_name())?;
+    let remote_tip = forge.fetch_branch(config.default_branch_name())?;
     let mut prepared_commits =
         crate::forge::get_prepared_commits(git, config, remote_tip)?;
 
@@ -102,11 +102,11 @@ async fn land_one(
 
     if based_on_unlanded_commits && !cherry_pick {
         return Err(Error::msg(formatdoc!(
-            "Cannot land a commit whose parent is not on {master}. To land \
-             this commit, rebase it so that it is a direct child of {master}.
+            "Cannot land a commit whose parent is not on {default_branch}. To land \
+             this commit, rebase it so that it is a direct child of {default_branch}.
              Alternatively, if you used the `--cherry-pick` option with `spr \
              diff`, then you can pass it to `spr land`, too.",
-            master = &config.master_branch_name(),
+            default_branch = &config.default_branch_name(),
         )));
     }
 
@@ -145,17 +145,17 @@ async fn land_one(
 
     output("🛫", "Getting started...")?;
 
-    // Fetch current master from GitHub.
-    let current_master = forge.fetch_branch(config.master_branch_name())?;
+    // Fetch current default branch from remote.
+    let current_default_branch = forge.fetch_branch(config.default_branch_name())?;
 
-    let base_is_master = config.is_master_branch(&change_request.base_ref_name);
-    let index = git.cherrypick(prepared_commit.oid, current_master)?;
+    let base_is_default_branch = config.is_default_branch(&change_request.base_ref_name);
+    let index = git.cherrypick(prepared_commit.oid, current_default_branch)?;
 
     if index.has_conflicts() {
         return Err(Error::msg(formatdoc!(
-            "This commit cannot be applied on top of the '{master}' branch.
+            "This commit cannot be applied on top of the '{default_branch}' branch.
              Please rebase this commit.{unlanded}",
-            master = &config.master_branch_name(),
+            default_branch = &config.default_branch_name(),
             unlanded = if based_on_unlanded_commits {
                 " You may also have to land commits that this commit depends on first."
             } else {
@@ -165,16 +165,16 @@ async fn land_one(
     }
 
     // This is the tree we are getting from cherrypicking the local commit
-    // on the selected base (master or stacked-on Pull Request).
+    // on the selected base (default branch or stacked-on Pull Request).
     let our_tree_oid = git.write_index(index)?;
 
-    // Now let's predict what merging the PR into the master branch would
+    // Now let's predict what merging the PR into the default branch would
     // produce.
     let merge_index = {
         let repo = git.repo();
-        let current_master = repo.find_commit(current_master)?;
+        let current_default_branch = repo.find_commit(current_default_branch)?;
         let pr_head = repo.find_commit(change_request.head_oid)?;
-        repo.merge_commits(&current_master, &pr_head, None)
+        repo.merge_commits(&current_default_branch, &pr_head, None)
     }?;
 
     let merge_matches_cherrypick = if merge_index.has_conflicts() {
@@ -193,40 +193,44 @@ async fn land_one(
     }
 
     // Okay, we are confident now that the PR can be merged and the result of
-    // that merge would be a master commit with the same tree as if we
-    // cherry-picked the commit onto master.
+    // that merge would be a default branch commit with the same tree as if we
+    // cherry-picked the commit onto the default branch.
     let mut pr_head_oid = change_request.head_oid;
 
-    if !base_is_master {
-        // The base of the Pull Request on GitHub is not set to master. This
-        // means the Pull Request uses a base branch. We tested above that
-        // merging the Pull Request branch into the master branch produces the
-        // intended result (the same as cherry-picking the local commit onto
-        // master), so what we want to do is actually merge the Pull Request as
-        // it is into master. Hence, we change the base to the master branch.
+    if !base_is_default_branch {
+        // The base of the Pull Request on GitHub is not set to the default
+        // branch. This means the Pull Request uses a base branch. We tested
+        // above that merging the Pull Request branch into the default branch
+        // produces the intended result (the same as cherry-picking the local
+        // commit onto the default branch), so what we want to do is actually
+        // merge the Pull Request as it is into the default branch. Hence, we
+        // change the base to the default branch.
         //
         // Before we do that, there is one more edge case to look out for: if
-        // the base branch contains changes that have since been landed on
-        // master, then Git might be able to figure out that these changes
-        // appear both in the pull request branch (via the merge branch) and in
-        // master, but are identical in those two so it is not a merge conflict
-        // but can go ahead. The result of this in master if we merge now is
-        // correct, but there is one problem: when looking at the Pull Request
-        // in GitHub after merging, it will show these change as part of the
-        // Pull Request. So when you look at the changed files of the Pull
-        // Request, you will see both changes in this commit (great!) and those
-        // in the base branch (a previous commit that has already been landed on
-        // master - not great!). This is because the changes shown are the ones
-        // that happened on this Pull Request branch (now including the base
-        // branch) since it branched off master. This can include changes in the
-        // base branch that are already on master, but were added to master
-        // after the Pull Request branch branched from master.
-        // The solution is to merge current master into the Pull Request branch.
-        // Doing that now means that the final changes done by this Pull Request
-        // are only the changes that are not yet in master. That's what we want.
-        // This final merge never introduces any changes to the Pull Request. In
-        // fact, the tree that we use for the merge commit is the one we got
-        // above from the cherry-picking of this commit on master.
+        // the base branch contains changes that have since been landed on the
+        // default branch, then Git might be able to figure out that these
+        // changes appear both in the pull request branch (via the merge branch)
+        // and in the default branch, but are identical in those two so it is
+        // not a merge conflict but can go ahead. The result of this in the
+        // default branch if we merge now is correct, but there is one problem:
+        // when looking at the Pull Request in GitHub after merging, it will
+        // show these change as part of the Pull Request. So when you look at
+        // the changed files of the Pull Request, you will see both changes in
+        // this commit (great!) and those in the base branch (a previous commit
+        // that has already been landed on the default branch - not great!).
+        // This is because the changes shown are the ones that happened on this
+        // Pull Request branch (now including the base branch) since it branched
+        // off the default branch. This can include changes in the base branch
+        // that are already on the default branch, but were added to the default
+        // branch after the Pull Request branch branched from the default
+        // branch.
+        // The solution is to merge the current default branch into the Pull
+        // Request branch. Doing that now means that the final changes done by
+        // this Pull Request are only the changes that are not yet in the
+        // default branch. That's what we want. This final merge never
+        // introduces any changes to the Pull Request. In fact, the tree that
+        // we use for the merge commit is the one we got above from the
+        // cherry-picking of this commit on the default branch.
 
         // The commit on the base branch that the PR branch is currently based on
         let pr_base_oid = git
@@ -234,23 +238,24 @@ async fn land_one(
             .merge_base(pr_head_oid, change_request.base_oid)?;
         let pr_base_tree = git.get_tree_oid_for_commit(pr_base_oid)?;
 
-        let pr_master_base =
-            git.repo().merge_base(pr_base_oid, current_master)?;
-        let pr_master_base_tree =
-            git.get_tree_oid_for_commit(pr_master_base)?;
+        let pr_default_branch_base =
+            git.repo().merge_base(pr_base_oid, current_default_branch)?;
+        let pr_default_branch_base_tree =
+            git.get_tree_oid_for_commit(pr_default_branch_base)?;
 
-        if pr_base_tree != pr_master_base_tree {
+        if pr_base_tree != pr_default_branch_base_tree {
             // So the current file contents of the base branch are not the same
-            // as those of the master branch commit that the base branch is
+            // as those of the default branch commit that the base branch is
             // based on. In other words, the base branch is currently not
             // "empty". Or, the base branch has changes in them. These changes
-            // must all have been landed on master in the meantime (after this
-            // base branch was branched off) or otherwise we would have aborted
-            // this whole operation further above. But in order not to show them
-            // as part of this Pull Request after landing, we have to make clear
-            // those are changes in master, not in this Pull Request.
-            // Here comes the additional merge-in-master commit on the Pull
-            // Request branch that achieves that!
+            // must all have been landed on the default branch in the meantime
+            // (after this base branch was branched off) or otherwise we would
+            // have aborted this whole operation further above. But in order not
+            // to show them as part of this Pull Request after landing, we have
+            // to make clear those are changes in the default branch, not in
+            // this Pull Request.
+            // Here comes the additional merge-in-default-branch commit on the
+            // Pull Request branch that achieves that!
 
             pr_head_oid = git.create_derived_commit(
                 pr_head_oid,
@@ -259,7 +264,7 @@ async fn land_one(
                     env!("CARGO_PKG_VERSION"),
                 ),
                 our_tree_oid,
-                &[pr_head_oid, current_master],
+                &[pr_head_oid, current_default_branch],
             )?;
 
             forge
@@ -277,7 +282,7 @@ async fn land_one(
             .update_change_request(
                 pull_request_number,
                 &ChangeRequestUpdate {
-                    base: Some(config.master_branch_name().to_string()),
+                    base: Some(config.default_branch_name().to_string()),
                     ..Default::default()
                 },
                 None,
@@ -300,7 +305,7 @@ async fn land_one(
             ));
         }
 
-        if config.is_master_branch(&mergeability.base_ref_name)
+        if config.is_default_branch(&mergeability.base_ref_name)
             && mergeability.mergeable.is_some()
         {
             if mergeability.mergeable != Some(true) {
@@ -355,9 +360,9 @@ async fn land_one(
         Ok(()) => {
             output("🛬", "Landed!")?;
 
-            // Fetch updated master to rebase on
-            let new_master = forge.fetch_branch(config.master_branch_name())?;
-            git.rebase_commits(&mut prepared_commits[..], new_master)
+            // Fetch updated default branch to rebase on
+            let new_default_branch = forge.fetch_branch(config.default_branch_name())?;
+            git.rebase_commits(&mut prepared_commits[..], new_default_branch)
                 .context(
                     "The automatic rebase failed - please rebase manually!"
                         .to_string(),
@@ -368,7 +373,7 @@ async fn land_one(
 
             // If we changed the target branch of the Pull Request earlier,
             // then undo this change now.
-            if !base_is_master {
+            if !base_is_default_branch {
                 let result = forge
                     .update_change_request(
                         pull_request_number,
@@ -397,7 +402,7 @@ async fn land_one(
 
     let base_remote_ref =
         format!("refs/heads/{}", change_request.base_ref_name);
-    if !base_is_master {
+    if !base_is_default_branch {
         push_specs.push(PushSpec {
             oid: None,
             remote_ref: &base_remote_ref,

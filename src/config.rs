@@ -35,8 +35,7 @@ impl MergeMethod {
 pub struct Config {
     pub owner: String,
     pub repo: String,
-    pub master_branch: String,
-    pub master_ref: GitHubBranch,
+    pub default_branch: String,
     pub branch_prefix: String,
     pub auth_token: String,
     pub require_approval: bool,
@@ -52,8 +51,7 @@ impl std::fmt::Debug for Config {
         f.debug_struct("Config")
             .field("owner", &self.owner)
             .field("repo", &self.repo)
-            .field("master_branch", &self.master_branch)
-            .field("master_ref", &self.master_ref)
+            .field("default_branch", &self.default_branch)
             .field("branch_prefix", &self.branch_prefix)
             .field("auth_token", &"[REDACTED]")
             .field("require_approval", &self.require_approval)
@@ -72,7 +70,7 @@ impl Config {
     pub fn new(
         owner: String,
         repo: String,
-        master_branch: &str,
+        default_branch: &str,
         branch_prefix: String,
         auth_token: String,
         require_approval: bool,
@@ -82,13 +80,10 @@ impl Config {
         default_reviewers: Vec<String>,
         merge_method: MergeMethod,
     ) -> Self {
-        let master_ref =
-            GitHubBranch::new_from_branch_name(master_branch, master_branch);
         Self {
             owner,
             repo,
-            master_branch: master_branch.to_owned(),
-            master_ref,
+            default_branch: default_branch.to_owned(),
             branch_prefix,
             auth_token,
             require_approval,
@@ -101,14 +96,14 @@ impl Config {
     }
 
     #[must_use]
-    pub fn master_branch_name(&self) -> &str {
-        &self.master_branch
+    pub fn default_branch_name(&self) -> &str {
+        &self.default_branch
     }
 
     #[must_use]
-    pub fn is_master_branch(&self, branch: &str) -> bool {
+    pub fn is_default_branch(&self, branch: &str) -> bool {
         let name = branch.strip_prefix("refs/heads/").unwrap_or(branch);
-        name == self.master_branch
+        name == self.default_branch
     }
 
     #[must_use]
@@ -155,14 +150,14 @@ impl Config {
         &self,
         ghref: &str,
     ) -> Result<GitHubBranch> {
-        GitHubBranch::new_from_ref(ghref, self.master_ref.branch_name())
+        GitHubBranch::new_from_ref(ghref, &self.default_branch)
     }
 
     #[must_use]
     pub fn new_github_branch(&self, branch_name: &str) -> GitHubBranch {
         GitHubBranch::new_from_branch_name(
             branch_name,
-            self.master_ref.branch_name(),
+            &self.default_branch,
         )
     }
 }
@@ -277,17 +272,17 @@ mod tests {
     }
 
     #[test]
-    fn test_is_master_branch() {
+    fn test_is_default_branch() {
         let config = config_factory();
-        assert!(config.is_master_branch("master"));
-        assert!(config.is_master_branch("refs/heads/master"));
-        assert!(!config.is_master_branch("develop"));
-        assert!(!config.is_master_branch("spr/main/foo"));
+        assert!(config.is_default_branch("master"));
+        assert!(config.is_default_branch("refs/heads/master"));
+        assert!(!config.is_default_branch("develop"));
+        assert!(!config.is_default_branch("spr/main/foo"));
     }
 
     #[test]
-    fn test_master_branch_name() {
+    fn test_default_branch_name() {
         let config = config_factory();
-        assert_eq!(config.master_branch_name(), "master");
+        assert_eq!(config.default_branch_name(), "master");
     }
 }

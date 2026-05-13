@@ -167,10 +167,10 @@ impl GitHub {
     }
 
     pub fn get_prepared_commits(&self) -> Result<Vec<PreparedCommit>> {
-        let master_oid = self
+        let default_branch_oid = self
             .git_remote
-            .fetch_branch(self.config.master_ref.branch_name())?;
-        self.git.get_prepared_commits(&self.config, master_oid)
+            .fetch_branch(self.config.default_branch_name())?;
+        self.git.get_prepared_commits(&self.config, default_branch_oid)
     }
 
     pub async fn get_github_user(&self, login: &str) -> Result<UserWithName> {
@@ -759,11 +759,11 @@ impl ForgeApi for GitHub {
 #[derive(Debug, Clone)]
 pub struct GitHubBranch {
     ref_on_github: String,
-    is_master_branch: bool,
+    is_default_branch: bool,
 }
 
 impl GitHubBranch {
-    pub fn new_from_ref(ghref: &str, master_branch_name: &str) -> Result<Self> {
+    pub fn new_from_ref(ghref: &str, default_branch_name: &str) -> Result<Self> {
         let ref_on_github = if ghref.starts_with("refs/heads/") {
             ghref.to_string()
         } else if ghref.starts_with("refs/") {
@@ -775,22 +775,22 @@ impl GitHubBranch {
         // The branch name is `ref_on_github` with the `refs/heads/` prefix
         // (length 11) removed
         let branch_name = &ref_on_github[11..];
-        let is_master_branch = branch_name == master_branch_name;
+        let is_default_branch = branch_name == default_branch_name;
 
         Ok(Self {
             ref_on_github,
-            is_master_branch,
+            is_default_branch,
         })
     }
 
     #[must_use]
     pub fn new_from_branch_name(
         branch_name: &str,
-        master_branch_name: &str,
+        default_branch_name: &str,
     ) -> Self {
         Self {
             ref_on_github: format!("refs/heads/{branch_name}"),
-            is_master_branch: branch_name == master_branch_name,
+            is_default_branch: branch_name == default_branch_name,
         }
     }
 
@@ -800,8 +800,8 @@ impl GitHubBranch {
     }
 
     #[must_use]
-    pub fn is_master_branch(&self) -> bool {
-        self.is_master_branch
+    pub fn is_default_branch(&self) -> bool {
+        self.is_default_branch
     }
 
     #[must_use]
@@ -833,16 +833,16 @@ mod tests {
         let r = GitHubBranch::new_from_ref("foo", "masterbranch").unwrap();
         assert_eq!(r.on_github(), "refs/heads/foo");
         assert_eq!(r.branch_name(), "foo");
-        assert!(!r.is_master_branch());
+        assert!(!r.is_default_branch());
     }
 
     #[test]
-    fn test_new_from_ref_with_master_branch_name() {
+    fn test_new_from_ref_with_default_branch_name() {
         let r =
             GitHubBranch::new_from_ref("masterbranch", "masterbranch").unwrap();
         assert_eq!(r.on_github(), "refs/heads/masterbranch");
         assert_eq!(r.branch_name(), "masterbranch");
-        assert!(r.is_master_branch());
+        assert!(r.is_default_branch());
     }
 
     #[test]
@@ -851,11 +851,11 @@ mod tests {
             .unwrap();
         assert_eq!(r.on_github(), "refs/heads/foo");
         assert_eq!(r.branch_name(), "foo");
-        assert!(!r.is_master_branch());
+        assert!(!r.is_default_branch());
     }
 
     #[test]
-    fn test_new_from_ref_with_master_ref_name() {
+    fn test_new_from_ref_with_default_branch_ref_name() {
         let r = GitHubBranch::new_from_ref(
             "refs/heads/masterbranch",
             "masterbranch",
@@ -863,7 +863,7 @@ mod tests {
         .unwrap();
         assert_eq!(r.on_github(), "refs/heads/masterbranch");
         assert_eq!(r.branch_name(), "masterbranch");
-        assert!(r.is_master_branch());
+        assert!(r.is_default_branch());
     }
 
     #[test]
@@ -871,16 +871,16 @@ mod tests {
         let r = GitHubBranch::new_from_branch_name("foo", "masterbranch");
         assert_eq!(r.on_github(), "refs/heads/foo");
         assert_eq!(r.branch_name(), "foo");
-        assert!(!r.is_master_branch());
+        assert!(!r.is_default_branch());
     }
 
     #[test]
-    fn test_new_from_master_branch_name() {
+    fn test_new_from_default_branch_name() {
         let r =
             GitHubBranch::new_from_branch_name("masterbranch", "masterbranch");
         assert_eq!(r.on_github(), "refs/heads/masterbranch");
         assert_eq!(r.branch_name(), "masterbranch");
-        assert!(r.is_master_branch());
+        assert!(r.is_default_branch());
     }
 
     #[test]
@@ -892,7 +892,7 @@ mod tests {
         .unwrap();
         assert_eq!(r.on_github(), "refs/heads/refs/heads/foo");
         assert_eq!(r.branch_name(), "refs/heads/foo");
-        assert!(!r.is_master_branch());
+        assert!(!r.is_default_branch());
     }
 
     #[test]
@@ -903,6 +903,6 @@ mod tests {
         );
         assert_eq!(r.on_github(), "refs/heads/refs/heads/foo");
         assert_eq!(r.branch_name(), "refs/heads/foo");
-        assert!(!r.is_master_branch());
+        assert!(!r.is_default_branch());
     }
 }
