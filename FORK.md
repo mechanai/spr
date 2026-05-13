@@ -73,3 +73,4 @@ Token resolution order:
 - **Forge-agnostic architecture:** Internal `ForgeApi` trait enables future Forgejo/GitLab support
 - **Dry-run limitation:** `--dry-run` prevents remote side effects (push, API calls) but local git operations (cherry-pick, rewrite) still execute
 - **Existing PRs:** On first `spr diff` after upgrade, existing PRs will have a stack section appended to their body
+- **Config key rename:** `spr.githubMasterBranch` → `spr.githubDefaultBranch` (old key still works as fallback)

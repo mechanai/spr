@@ -155,7 +155,7 @@ pub async fn init() -> Result<()> {
         .interact_text()?;
     config.set_str("spr.githubRepository", &github_repo)?;
 
-    // Master branch name (just query GitHub)
+    // Default branch name (just query GitHub)
 
     let github_repo_info = octocrab
         .get::<octocrab::models::Repository, _, _>(
@@ -166,7 +166,7 @@ pub async fn init() -> Result<()> {
         .context("Getting github repo info".to_string())?;
 
     config.set_str(
-        "spr.githubMasterBranch",
+        "spr.githubDefaultBranch",
         github_repo_info
             .default_branch
             .as_ref()

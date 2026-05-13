@@ -29,22 +29,22 @@ pub async fn sync(
 ) -> Result<()> {
     git.check_no_uncommitted_changes()?;
 
-    // Fetch current master from upstream
-    output("🔄", &format!("Fetching {}", config.master_branch_name()))?;
-    let new_master_oid = forge.fetch_branch(config.master_branch_name())?;
+    // Fetch current default branch from upstream
+    output("🔄", &format!("Fetching {}", config.default_branch_name()))?;
+    let new_default_branch_oid = forge.fetch_branch(config.default_branch_name())?;
 
-    // Get the prepared commits (these are the local commits above master)
+    // Get the prepared commits (these are the local commits above the default branch)
     let mut prepared_commits =
-        crate::forge::get_prepared_commits(git, config, new_master_oid)?;
+        crate::forge::get_prepared_commits(git, config, new_default_branch_oid)?;
 
     if prepared_commits.is_empty() {
         output_essential("already up to date, no local commits")?;
         return Ok(());
     }
 
-    // Check if we're already based on the latest master
+    // Check if we're already based on the latest default branch
     let current_base = prepared_commits.first().unwrap().parent_oid;
-    if current_base == new_master_oid {
+    if current_base == new_default_branch_oid {
         output_essential("already up to date")?;
     } else {
         output(
@@ -52,11 +52,11 @@ pub async fn sync(
             &format!(
                 "Rebasing {} commit(s) onto {}",
                 prepared_commits.len(),
-                config.master_branch_name()
+                config.default_branch_name()
             ),
         )?;
 
-        git.rebase_commits(&mut prepared_commits, new_master_oid)
+        git.rebase_commits(&mut prepared_commits, new_default_branch_oid)
             .wrap_err(
                 "Rebase failed — please rebase manually and run spr diff --all",
             )?;

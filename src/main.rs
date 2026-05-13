@@ -46,10 +46,11 @@ pub struct Cli {
     #[clap(long)]
     github_repository: Option<String>,
 
-    /// The name of the centrally shared branch into which the pull requests are merged
-    /// spr.githubMasterBranch)
+    /// The default branch into which pull requests are merged (if not given
+    /// taken from git config spr.githubDefaultBranch, falling back to
+    /// spr.githubMasterBranch, defaulting to 'master')
     #[clap(long)]
-    github_master_branch: Option<String>,
+    github_default_branch: Option<String>,
 
     /// prefix to be used for branches created for pull requests (if not given
     /// taken from git config spr.branchPrefix, defaulting to
@@ -113,7 +114,7 @@ enum Commands {
     /// Validate commit message and check for cherry-pick conflicts (fetches from remote)
     Check(commands::check::CheckOptions),
 
-    /// Rebase local branch onto upstream master and optionally update PRs
+    /// Rebase local branch onto upstream default branch and optionally update PRs
     Sync(commands::sync::SyncOptions),
 }
 
@@ -155,10 +156,11 @@ pub async fn spr() -> Result<()> {
         })?,
     };
 
-    let github_master_branch = match cli.github_master_branch {
+    let github_default_branch = match cli.github_default_branch {
         Some(v) => Ok::<String, git2::Error>(v),
         None => git_config
-            .get_string("spr.githubMasterBranch")
+            .get_string("spr.githubDefaultBranch")
+            .or_else(|_| git_config.get_string("spr.githubMasterBranch"))
             .or_else(|_| Ok("master".to_string())),
     }?;
 
@@ -234,7 +236,7 @@ pub async fn spr() -> Result<()> {
     let config = spr::config::Config::new(
         github_owner,
         github_repo,
-        &github_master_branch,
+        &github_default_branch,
         branch_prefix,
         github_auth_token.clone(),
         require_approval,

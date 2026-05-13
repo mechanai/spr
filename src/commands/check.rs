@@ -26,7 +26,7 @@ pub async fn check(
     // Check for uncommitted changes
     git.check_no_uncommitted_changes()?;
 
-    let remote_tip = forge.fetch_branch(config.master_branch_name())?;
+    let remote_tip = forge.fetch_branch(config.default_branch_name())?;
     let prepared_commits =
         crate::forge::get_prepared_commits(git, config, remote_tip)?;
 
@@ -48,13 +48,13 @@ pub async fn check(
 
     // Cherry-pick conflict check
     if opts.cherry_pick {
-        let master_oid = if let Some(first) = prepared_commits.first() {
+        let default_branch_oid = if let Some(first) = prepared_commits.first() {
             first.parent_oid
         } else {
             return Ok(());
         };
 
-        let index = git.cherrypick(head_commit.oid, master_oid)?;
+        let index = git.cherrypick(head_commit.oid, default_branch_oid)?;
         if index.has_conflicts() {
             output_essential("cherry-pick: conflict")?;
             return Err(SprError::Conflict("Cherry-pick would conflict".into()).into());

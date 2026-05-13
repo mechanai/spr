@@ -30,7 +30,7 @@ pub async fn close(
 ) -> Result<()> {
     let mut result = Ok(());
 
-    let remote_tip = forge.fetch_branch(config.master_branch_name())?;
+    let remote_tip = forge.fetch_branch(config.default_branch_name())?;
     let mut prepared_commits =
         crate::forge::get_prepared_commits(git, config, remote_tip)?;
 
@@ -93,7 +93,7 @@ async fn close_impl(
 
     output("📖", "Getting started...")?;
 
-    let base_is_master = config.is_master_branch(&change_request.base_ref_name);
+    let base_is_default_branch = config.is_default_branch(&change_request.base_ref_name);
 
     let result = forge.close_change_request(pull_request_number).await;
 
@@ -120,7 +120,7 @@ async fn close_impl(
         remote_ref: &head_ref,
     }];
 
-    if !base_is_master {
+    if !base_is_default_branch {
         push_specs.push(PushSpec {
             oid: None,
             remote_ref: &base_ref,

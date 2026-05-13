@@ -53,8 +53,8 @@ pub struct DiffOptions {
     #[clap(long, short = 'r')]
     pub refs: Option<String>,
 
-    /// Submit this commit as if it was cherry-picked on master. Do not base it
-    /// on any intermediate changes between the master branch and this commit.
+    /// Submit this commit as if it was cherry-picked on the default branch. Do not base it
+    /// on any intermediate changes between the default branch and this commit.
     #[clap(long)]
     pub cherry_pick: bool,
 
@@ -102,13 +102,13 @@ pub async fn diff(
     let mut result = Ok(());
 
     // Look up the commits on the local branch
-    let remote_tip = forge.fetch_branch(config.master_branch_name())?;
+    let remote_tip = forge.fetch_branch(config.default_branch_name())?;
     let mut prepared_commits =
         crate::forge::get_prepared_commits(git, config, remote_tip)?;
 
-    // The parent of the first commit in the list is the commit on master that
+    // The parent of the first commit in the list is the commit on the default branch that
     // the local branch is based on
-    let master_base_oid = if let Some(first_commit) = prepared_commits.first() {
+    let default_branch_base_oid = if let Some(first_commit) = prepared_commits.first() {
         first_commit.parent_oid
     } else {
         output("👋", "Branch is empty - nothing to do. Good bye!")?;
@@ -232,7 +232,7 @@ pub async fn diff(
             forge,
             config,
             prepared_commit,
-            master_base_oid,
+            default_branch_base_oid,
             change_request,
             stack_info.as_deref(),
         )
@@ -257,50 +257,50 @@ async fn diff_impl(
     forge: &dyn crate::forge::ForgeApi,
     config: &crate::config::Config,
     local_commit: &mut PreparedCommit,
-    master_base_oid: Oid,
+    default_branch_base_oid: Oid,
     change_request: Option<ChangeRequest>,
     stack_info: Option<&str>,
 ) -> Result<()> {
     // Parsed commit message of the local commit
     let message = &mut local_commit.message;
 
-    // Check if the local commit is based directly on the master branch.
-    let directly_based_on_master = local_commit.parent_oid == master_base_oid;
+    // Check if the local commit is based directly on the default branch.
+    let directly_based_on_default_branch = local_commit.parent_oid == default_branch_base_oid;
 
     // Determine the trees the Pull Request branch and the base branch should
     // have when we're done here.
     let (new_head_tree, new_base_tree) = if !opts.cherry_pick
-        || directly_based_on_master
+        || directly_based_on_default_branch
     {
         // Unless the user tells us to --cherry-pick, these should be the trees
         // of the current commit and its parent.
-        // If the current commit is directly based on master (i.e.
-        // directly_based_on_master is true), then we can do this here even when
+        // If the current commit is directly based on the default branch (i.e.
+        // directly_based_on_default_branch is true), then we can do this here even when
         // the user tells us to --cherry-pick, because we would cherry pick the
         // current commit onto its parent, which gives us the same tree as the
-        // current commit has, and the master base is the same as this commit's
+        // current commit has, and the default branch base is the same as this commit's
         // parent.
         let head_tree = git.get_tree_oid_for_commit(local_commit.oid)?;
         let base_tree = git.get_tree_oid_for_commit(local_commit.parent_oid)?;
 
         (head_tree, base_tree)
     } else {
-        // Cherry-pick the current commit onto master
-        let index = git.cherrypick(local_commit.oid, master_base_oid)?;
+        // Cherry-pick the current commit onto the default branch
+        let index = git.cherrypick(local_commit.oid, default_branch_base_oid)?;
 
         if index.has_conflicts() {
             bail!(
-                "This commit cannot be cherry-picked on {master}.",
-                master = config.master_branch_name(),
+                "This commit cannot be cherry-picked on {default_branch}.",
+                default_branch = config.default_branch_name(),
             );
         }
 
         // This is the tree we are getting from cherrypicking the local commit
-        // on master.
+        // on the default branch.
         let cherry_pick_tree = git.write_index(index)?;
-        let master_tree = git.get_tree_oid_for_commit(master_base_oid)?;
+        let default_branch_tree = git.get_tree_oid_for_commit(default_branch_base_oid)?;
 
-        (cherry_pick_tree, master_tree)
+        (cherry_pick_tree, default_branch_tree)
     };
 
     if let Some(number) = local_commit.pull_request_number {
@@ -417,48 +417,48 @@ async fn diff_impl(
     };
 
     // Get the tree ids of the current head of the Pull Request, as well as the
-    // base, and the commit id of the master commit this PR is currently based
+    // base, and the commit id of the default branch commit this PR is currently based
     // on.
     // If there is no pre-existing Pull Request, we fill in the equivalent
     // values.
-    let (pr_head_oid, pr_head_tree, pr_base_oid, pr_base_tree, pr_master_base) =
+    let (pr_head_oid, pr_head_tree, pr_base_oid, pr_base_tree, pr_default_branch_base) =
         if let Some(cr) = &change_request {
             let pr_head_tree = git.get_tree_oid_for_commit(cr.head_oid)?;
 
-            let current_master_oid =
-                forge.fetch_branch(config.master_branch_name())?;
+            let current_default_branch_oid =
+                forge.fetch_branch(config.default_branch_name())?;
             let pr_base_oid =
                 git.repo().merge_base(cr.head_oid, cr.base_oid)?;
             let pr_base_tree = git.get_tree_oid_for_commit(pr_base_oid)?;
 
-            let pr_master_base =
-                git.repo().merge_base(cr.head_oid, current_master_oid)?;
+            let pr_default_branch_base =
+                git.repo().merge_base(cr.head_oid, current_default_branch_oid)?;
 
             (
                 cr.head_oid,
                 pr_head_tree,
                 pr_base_oid,
                 pr_base_tree,
-                pr_master_base,
+                pr_default_branch_base,
             )
         } else {
-            let master_base_tree =
-                git.get_tree_oid_for_commit(master_base_oid)?;
+            let default_branch_base_tree =
+                git.get_tree_oid_for_commit(default_branch_base_oid)?;
             (
-                master_base_oid,
-                master_base_tree,
-                master_base_oid,
-                master_base_tree,
-                master_base_oid,
+                default_branch_base_oid,
+                default_branch_base_tree,
+                default_branch_base_oid,
+                default_branch_base_tree,
+                default_branch_base_oid,
             )
         };
-    let needs_merging_master = pr_master_base != master_base_oid;
+    let needs_merging_default_branch = pr_default_branch_base != default_branch_base_oid;
 
     // At this point we can check if we can exit early because no update to the
     // existing Pull Request is necessary
     if let Some(ref cr) = change_request {
         // So there is an existing Pull Request...
-        if !needs_merging_master
+        if !needs_merging_default_branch
             && pr_head_tree == new_head_tree
             && pr_base_tree == new_base_tree
         {
@@ -487,9 +487,9 @@ async fn diff_impl(
     }
 
     // Check if there is a base branch on GitHub already. That's the case when
-    // there is an existing Pull Request, and its base is not the master branch.
+    // there is an existing Pull Request, and its base is not the default branch.
     let base_branch: Option<String> = if let Some(ref cr) = change_request {
-        if config.is_master_branch(&cr.base_ref_name) {
+        if config.is_default_branch(&cr.base_ref_name) {
             None
         } else {
             Some(cr.base_ref_name.clone())
@@ -501,66 +501,66 @@ async fn diff_impl(
     // We are going to construct `pr_base_parent: Option<Oid>`.
     // The value will be the commit we have to merge into the new Pull Request
     // commit to reflect changes in the parent of the local commit (by rebasing
-    // or changing commits between master and this one, although technically
+    // or changing commits between the default branch and this one, although technically
     // that's also rebasing).
     // If it's `None`, then we will not merge anything into the new Pull Request
     // commit.
     // If we are updating an existing PR, then there are three cases here:
     // (1) the parent tree of this commit is unchanged and we do not need to
-    //     merge in master, which means that the local commit was amended, but
+    //     merge in the default branch, which means that the local commit was amended, but
     //     not rebased. We don't need to merge anything into the Pull Request
     //     branch.
     // (2) the parent tree has changed, but the parent of the local commit is on
-    //     master (or we are cherry-picking) and we are not already using a base
-    //     branch: in this case we can merge the master commit we are based on
+    //     the default branch (or we are cherry-picking) and we are not already using a base
+    //     branch: in this case we can merge the default branch commit we are based on
     //     into the PR branch, without going via a base branch. Thus, we don't
     //     introduce a base branch here and the PR continues to target the
-    //     master branch.
+    //     default branch.
     // (3) the parent tree has changed, and we need to use a base branch (either
     //     because one was already created earlier, or we find that we are not
-    //     directly based on master now): we need to construct a new commit for
+    //     directly based on the default branch now): we need to construct a new commit for
     //     the base branch. That new commit's tree is always that of that local
     //     commit's parent (thus making sure that the difference between base
     //     branch and pull request branch are exactly the changes made by the
     //     local commit, thus the changes we want to have reviewed). The new
     //     commit may have one or two parents. The previous base is always a
     //     parent (that's either the current commit on an existing base branch,
-    //     or the previous master commit the PR was based on if there isn't a
-    //     base branch already). In addition, if the master commit this commit
+    //     or the previous default branch commit the PR was based on if there isn't a
+    //     base branch already). In addition, if the default branch commit this commit
     //     is based on has changed, (i.e. the local commit got rebased on newer
-    //     master in the meantime) then we have to merge in that master commit,
+    //     default branch in the meantime) then we have to merge in that default branch commit,
     //     which will be the second parent.
     // If we are creating a new pull request then `pr_base_tree` (the current
-    // base of the PR) was set above to be the tree of the master commit the
+    // base of the PR) was set above to be the tree of the default branch commit the
     // local commit is based one, whereas `new_base_tree` is the tree of the
     // parent of the local commit. So if the local commit for this new PR is on
-    // master, those two are the same (and we want to apply case 1). If the
-    // commit is not directly based on master, we have to create this new PR
+    // the default branch, those two are the same (and we want to apply case 1). If the
+    // commit is not directly based on the default branch, we have to create this new PR
     // with a base branch, so that is case 3.
 
     let (pr_base_parent, base_branch) =
-        if pr_base_tree == new_base_tree && !needs_merging_master {
+        if pr_base_tree == new_base_tree && !needs_merging_default_branch {
             // Case 1
             (None, base_branch)
         } else if base_branch.is_none()
-            && (directly_based_on_master || opts.cherry_pick)
+            && (directly_based_on_default_branch || opts.cherry_pick)
         {
             // Case 2
-            (Some(master_base_oid), None)
+            (Some(default_branch_base_oid), None)
         } else {
             // Case 3
 
             // We are constructing a base branch commit.
             // One parent of the new base branch commit will be the current base
             // commit, that could be either the top commit of an existing base
-            // branch, or a commit on master.
+            // branch, or a commit on the default branch.
             let mut parents = vec![pr_base_oid];
 
-            // If we need to rebase on master, make the master commit also a
+            // If we need to rebase on the default branch, make the default branch commit also a
             // parent (except if the first parent is that same commit, we don't
             // want duplicates in `parents`).
-            if needs_merging_master && pr_base_oid != master_base_oid {
-                parents.push(master_base_oid);
+            if needs_merging_default_branch && pr_base_oid != default_branch_base_oid {
+                parents.push(default_branch_base_oid);
             }
 
             let new_base_branch_commit = git.create_derived_commit(
@@ -572,7 +572,7 @@ async fn diff_impl(
                     } else {
                         format!(
                             "changes to {} this commit is based on",
-                            config.master_branch_name()
+                            config.default_branch_name()
                         )
                     },
                     env!("CARGO_PKG_VERSION"),
@@ -590,7 +590,7 @@ async fn diff_impl(
                     &config.branch_prefix,
                     &format!(
                         "{}.{}",
-                        config.master_branch_name(),
+                        config.default_branch_name(),
                         &slugify(title),
                     ),
                 )?
@@ -627,7 +627,7 @@ async fn diff_impl(
     }
 
     // Construct the new commit for the Pull Request branch. First parent is the
-    // current head commit of the Pull Request (we set this to the master base
+    // current head commit of the Pull Request (we set this to the default branch base
     // commit earlier if the Pull Request does not yet exist)
     let mut pr_commit_parents = vec![pr_head_oid];
 
@@ -662,7 +662,7 @@ async fn diff_impl(
     if let Some(cr) = change_request {
         // We are updating an existing Pull Request
 
-        if needs_merging_master {
+        if needs_merging_default_branch {
             output(
                 "⚾",
                 &format!(
@@ -715,7 +715,7 @@ async fn diff_impl(
                 updates.base = Some(base_branch.clone());
             }
         } else {
-            // The Pull Request is against the master branch. In that case we
+            // The Pull Request is against the default branch. In that case we
             // only need to push the update to the Pull Request branch.
             let push_specs = vec![PushSpec {
                 oid: Some(pr_commit),
@@ -755,7 +755,7 @@ async fn diff_impl(
         // Then call GitHub to create the Pull Request.
         let base_ref = base_branch
             .as_deref()
-            .unwrap_or(config.master_branch_name());
+            .unwrap_or(config.default_branch_name());
         let pull_request_number = forge
             .create_change_request(
                 message,

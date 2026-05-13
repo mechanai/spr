@@ -50,7 +50,7 @@ These flags apply to all subcommands:
 | `--cd DIR` | Change to DIR before running |
 | `--github-auth-token TOKEN` | Override auth token |
 | `--github-repository OWNER/REPO` | Override repository |
-| `--github-master-branch BRANCH` | Override target branch |
+| `--github-default-branch BRANCH` | Override target branch |
 | `--branch-prefix PREFIX` | Override PR branch prefix |
 | `--non-interactive` | Never prompt (also `SPR_NON_INTERACTIVE=1`) |
 | `--quiet` / `-q` | Essential output only (also `SPR_QUIET=1`) |
