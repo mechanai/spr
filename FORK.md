@@ -43,7 +43,7 @@ This fork adds features for AI-agent automation and general usability improvemen
 Token resolution order:
 1. `--github-auth-token` CLI flag
 2. `GITHUB_TOKEN` environment variable
-3. `gh` CLI config file (`~/.config/gh/hosts.yml`)
+3. `gh auth token` command (gh CLI)
 4. `spr.githubAuthToken` git config
 
 ## Build & Dependencies

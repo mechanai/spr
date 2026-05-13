@@ -172,7 +172,7 @@ Git config keys (set via `git config`):
 Token resolution order (first match wins):
 1. `--github-auth-token` CLI flag
 2. `GITHUB_TOKEN` environment variable
-3. `~/.config/gh/hosts.yml` (gh CLI)
+3. `gh auth token` (gh CLI, must be logged in)
 4. `spr.githubAuthToken` git config
 
 For CI/automation, set `GITHUB_TOKEN`.
