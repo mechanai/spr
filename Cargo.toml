@@ -29,6 +29,7 @@ lazy-regex = "^3.4.1"
 log = "0.4.28"
 openssl = { version = "0.10", features = ["vendored"] }
 octocrab = { version = "^0.45.0", default-features = false, features = ["rustls", "default-client", "tokio"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
 hyper-rustls = { version = "0.27", features = ["rustls-native-certs", "http1", "tls12", "native-tokio", "ring"] }
 open = "5.3.2"
 secrecy = { version = "0.10.3", default-features = false }
