@@ -54,10 +54,4 @@ targets = [
     "aarch64-unknown-linux-musl",
 ]
 # Installers to generate
-installers = ["shell", "homebrew"]
-# Publish jobs to run in CI
-publish-jobs = ["homebrew"]
-# Homebrew tap
-tap = "spacedentist/homebrew-tap"
-# Formula name
-formula = "spr"
+installers = ["shell"]
