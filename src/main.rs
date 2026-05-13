@@ -161,10 +161,11 @@ pub async fn spr() -> Result<()> {
 
     let github_repository = match cli.github_repository {
         Some(v) => v,
-        None => git_config.get_string("spr.githubRepository").map_err(|e| {
-            eyre!(SprError::Auth(format!(
-                "spr.githubRepository not configured: {e}"
-            )))
+        None => git_config.get_string("spr.githubRepository").map_err(|_| {
+            eyre!(SprError::Auth(
+                "spr.githubRepository not configured. Run 'spr init' to set up this repository."
+                    .to_string(),
+            ))
         })?,
     };
 
@@ -178,10 +179,11 @@ pub async fn spr() -> Result<()> {
 
     let branch_prefix = match cli.branch_prefix {
         Some(v) => v,
-        None => git_config.get_string("spr.branchPrefix").map_err(|e| {
-            eyre!(SprError::Auth(format!(
-                "spr.branchPrefix not configured: {e}"
-            )))
+        None => git_config.get_string("spr.branchPrefix").map_err(|_| {
+            eyre!(SprError::Auth(
+                "spr.branchPrefix not configured. Run 'spr init' to set up this repository."
+                    .to_string(),
+            ))
         })?,
     };
 
