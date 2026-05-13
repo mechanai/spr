@@ -7,7 +7,6 @@
 
 use color_eyre::eyre::{Error, Result, WrapErr as _, eyre};
 use graphql_client::{GraphQLQuery, Response};
-use serde::Deserialize;
 
 use crate::{
     git::PreparedCommit,
@@ -21,8 +20,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::forge::{
     ChangeRequest, ChangeRequestState, ChangeRequestUpdate, ForgeApi,
-    Mergeability, ReviewStatus as ForgeReviewStatus, ReviewerRequest, TeamInfo,
-    UserInfo,
+    Mergeability, ReviewStatus, ReviewerRequest, TeamInfo, UserInfo,
 };
 
 #[derive(Clone)]
@@ -30,96 +28,6 @@ pub struct GitHub {
     config: crate::config::Config,
     git: crate::git::Git,
     git_remote: crate::git_remote::GitRemote,
-}
-
-#[derive(Debug, Clone)]
-pub struct PullRequest {
-    pub number: u64,
-    pub state: PullRequestState,
-    pub title: String,
-    pub body: Option<String>,
-    pub sections: MessageSectionsMap,
-    pub base: GitHubBranch,
-    pub head: GitHubBranch,
-    pub base_oid: git2::Oid,
-    pub head_oid: git2::Oid,
-    pub merge_commit: Option<git2::Oid>,
-    pub reviewers: HashMap<String, ReviewStatus>,
-    pub review_status: Option<ReviewStatus>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ReviewStatus {
-    Requested,
-    Approved,
-    Rejected,
-}
-
-#[derive(serde::Serialize, Default, Debug)]
-pub struct PullRequestUpdate {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub body: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub base: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub state: Option<PullRequestState>,
-}
-
-impl PullRequestUpdate {
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.title.is_none()
-            && self.body.is_none()
-            && self.base.is_none()
-            && self.state.is_none()
-    }
-
-    pub fn update_message(
-        &mut self,
-        pull_request: &PullRequest,
-        message: &MessageSectionsMap,
-    ) {
-        let title = message.get(&MessageSection::Title);
-        if title.is_some() && title != Some(&pull_request.title) {
-            self.title = title.cloned();
-        }
-
-        let body = build_github_body(message);
-        if pull_request.body.as_ref() != Some(&body) {
-            self.body = Some(body);
-        }
-    }
-}
-
-#[derive(serde::Serialize, Default, Debug)]
-pub struct PullRequestRequestReviewers {
-    pub reviewers: Vec<String>,
-    pub team_reviewers: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum PullRequestState {
-    Open,
-    Closed,
-}
-
-#[derive(serde::Deserialize, Debug, Clone)]
-pub struct UserWithName {
-    pub login: String,
-    pub name: Option<String>,
-    #[serde(default)]
-    pub is_collaborator: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct PullRequestMergeability {
-    pub base: GitHubBranch,
-    pub head_oid: git2::Oid,
-    pub mergeable: Option<bool>,
-    pub merge_commit: Option<git2::Oid>,
 }
 
 #[derive(GraphQLQuery)]
@@ -173,14 +81,29 @@ impl GitHub {
         self.git.get_prepared_commits(&self.config, default_branch_oid)
     }
 
-    pub async fn get_github_user(&self, login: &str) -> Result<UserWithName> {
-        octocrab::instance()
-            .get::<UserWithName, _, _>(format!("/users/{login}"), None::<&()>)
+    pub async fn fetch_user(&self, login: &str) -> Result<UserInfo> {
+        /// Deserialization wrapper for GitHub GET /users/{login} endpoint.
+        /// Forge-neutral `UserInfo` intentionally omits serde derives.
+        #[derive(serde::Deserialize)]
+        struct GitHubUser {
+            login: String,
+            name: Option<String>,
+            #[serde(default)]
+            is_collaborator: bool,
+        }
+
+        let u: GitHubUser = octocrab::instance()
+            .get(format!("/users/{login}"), None::<&()>)
             .await
-            .map_err(Error::from)
+            .map_err(Error::from)?;
+        Ok(UserInfo {
+            login: u.login,
+            name: u.name,
+            is_collaborator: u.is_collaborator,
+        })
     }
 
-    pub async fn get_github_team(
+    pub async fn fetch_team(
         &self,
         owner: &str,
         team: &str,
@@ -192,7 +115,10 @@ impl GitHub {
             .map_err(Error::from)
     }
 
-    pub async fn get_pull_request(&self, number: u64) -> Result<PullRequest> {
+    pub async fn fetch_change_request(
+        &self,
+        number: u64,
+    ) -> Result<ChangeRequest> {
         let variables = pull_request_query::Variables {
             name: self.config.repo.clone(),
             owner: self.config.owner.clone(),
@@ -209,7 +135,7 @@ impl GitHub {
             let error = Err(eyre!("fetching PR #{number} failed"));
             return errors
                 .into_iter()
-                .fold(error, |err, e| err.context(e.to_string()));
+                .fold(error, |err, e| err.wrap_err(e.to_string()));
         }
 
         let pr = response_body
@@ -315,20 +241,24 @@ impl GitHub {
             );
         }
 
-        Ok::<_, Error>(PullRequest {
+        Ok(ChangeRequest {
             #[allow(clippy::cast_sign_loss)]
             number: pr.number as u64,
             state: match pr.state {
                 pull_request_query::PullRequestState::OPEN => {
-                    PullRequestState::Open
+                    ChangeRequestState::Open
                 }
-                _ => PullRequestState::Closed,
+                pull_request_query::PullRequestState::MERGED => {
+                    ChangeRequestState::Merged
+                }
+                _ => ChangeRequestState::Closed,
             },
             title: pr.title,
             body: Some(pr.body),
+            is_draft: pr.is_draft,
+            base_ref_name: base.branch_name().to_owned(),
+            head_ref_name: head.branch_name().to_owned(),
             sections,
-            base,
-            head,
             base_oid,
             head_oid,
             reviewers,
@@ -339,7 +269,7 @@ impl GitHub {
         })
     }
 
-    pub async fn create_pull_request(
+    pub async fn create_change_request_impl(
         &self,
         message: &MessageSectionsMap,
         base_ref_name: String,
@@ -370,10 +300,10 @@ impl GitHub {
         Ok(number)
     }
 
-    pub async fn update_pull_request(
+    async fn patch_change_request(
         &self,
         number: u64,
-        updates: PullRequestUpdate,
+        updates: &PatchBody<'_>,
     ) -> Result<()> {
         octocrab::instance()
             .patch::<octocrab::models::pulls::PullRequest, _, _>(
@@ -388,12 +318,12 @@ impl GitHub {
         Ok(())
     }
 
-    pub async fn request_reviewers(
+    async fn post_reviewer_request(
         &self,
         number: u64,
-        reviewers: PullRequestRequestReviewers,
+        reviewers: &RequestReviewersBody<'_>,
     ) -> Result<()> {
-        #[derive(Deserialize)]
+        #[derive(serde::Deserialize)]
         struct Ignore {}
         let _: Ignore = octocrab::instance()
             .post(
@@ -423,10 +353,10 @@ impl GitHub {
         Ok(())
     }
 
-    pub async fn get_pull_request_mergeability(
+    pub async fn fetch_mergeability(
         &self,
         number: u64,
-    ) -> Result<PullRequestMergeability> {
+    ) -> Result<Mergeability> {
         let variables = pull_request_mergeability_query::Variables {
             name: self.config.repo.clone(),
             owner: self.config.owner.clone(),
@@ -453,8 +383,10 @@ impl GitHub {
             .pull_request
             .ok_or_else(|| eyre!("failed to find PR"))?;
 
-        Ok::<_, Error>(PullRequestMergeability {
-            base: self.config.new_github_branch_from_ref(&pr.base_ref_name)?,
+        let base = self.config.new_github_branch_from_ref(&pr.base_ref_name)?;
+
+        Ok(Mergeability {
+            base_ref_name: base.branch_name().to_owned(),
             head_oid: git2::Oid::from_str(&pr.head_ref_oid)?,
             mergeable: match pr.mergeable {
                 pull_request_mergeability_query::MergeableState::CONFLICTING => Some(false),
@@ -468,15 +400,15 @@ impl GitHub {
         })
     }
 
-    pub async fn close_pull_request(&self, number: u64) -> Result<()> {
-        let updates = PullRequestUpdate {
-            state: Some(PullRequestState::Closed),
+    pub async fn close_change_request_impl(&self, number: u64) -> Result<()> {
+        let updates = PatchBody {
+            state: Some("closed"),
             ..Default::default()
         };
-        self.update_pull_request(number, updates).await
+        self.patch_change_request(number, &updates).await
     }
 
-    pub async fn merge_pull_request(
+    pub async fn merge_change_request_impl(
         &self,
         number: u64,
         method: crate::config::MergeMethod,
@@ -514,47 +446,29 @@ impl GitHub {
         }
     }
 
-    fn pull_request_to_change_request(pr: PullRequest) -> ChangeRequest {
-        ChangeRequest {
-            number: pr.number,
-            title: pr.title,
-            body: pr.body,
-            base_ref_name: pr.base.branch_name().to_owned(),
-            base_oid: pr.base_oid,
-            head_ref_name: pr.head.branch_name().to_owned(),
-            head_oid: pr.head_oid,
-            is_draft: false,
-            state: match pr.state {
-                PullRequestState::Open => ChangeRequestState::Open,
-                PullRequestState::Closed => {
-                    if pr.merge_commit.is_some() {
-                        ChangeRequestState::Merged
-                    } else {
-                        ChangeRequestState::Closed
-                    }
-                }
-            },
-            sections: pr.sections,
-            reviewers: pr
-                .reviewers
-                .into_iter()
-                .map(|(k, v)| {
-                    let forge_status = match v {
-                        ReviewStatus::Requested => ForgeReviewStatus::Requested,
-                        ReviewStatus::Approved => ForgeReviewStatus::Approved,
-                        ReviewStatus::Rejected => ForgeReviewStatus::Rejected,
-                    };
-                    (k, forge_status)
-                })
-                .collect(),
-            review_status: pr.review_status.map(|s| match s {
-                ReviewStatus::Requested => ForgeReviewStatus::Requested,
-                ReviewStatus::Approved => ForgeReviewStatus::Approved,
-                ReviewStatus::Rejected => ForgeReviewStatus::Rejected,
-            }),
-            merge_commit: pr.merge_commit,
-        }
-    }
+}
+
+/// Serialization wrapper for GitHub PATCH /pulls/{number} endpoint.
+/// Forge-neutral `ChangeRequestUpdate` intentionally omits serde derives
+/// to stay forge-agnostic; this struct bridges to the GitHub REST API.
+#[derive(serde::Serialize, Default)]
+struct PatchBody<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    state: Option<&'a str>,
+}
+
+/// Serialization wrapper for GitHub `POST /pulls/{number}/requested_reviewers`.
+/// Forge-neutral `ReviewerRequest` intentionally omits serde derives.
+#[derive(serde::Serialize)]
+struct RequestReviewersBody<'a> {
+    reviewers: &'a [String],
+    team_reviewers: &'a [String],
 }
 
 #[async_trait(?Send)]
@@ -567,7 +481,7 @@ impl ForgeApi for GitHub {
         draft: bool,
         stack_info: Option<&str>,
     ) -> Result<u64> {
-        self.create_pull_request(
+        self.create_change_request_impl(
             message,
             base.to_owned(),
             head.to_owned(),
@@ -583,43 +497,47 @@ impl ForgeApi for GitHub {
         update: &ChangeRequestUpdate,
         stack_info: Option<&str>,
     ) -> Result<()> {
-        let mut pr_update = PullRequestUpdate {
-            title: update.title.clone(),
-            body: update.body.clone(),
-            base: update.base.clone(),
-            state: update.state.as_ref().map(|s| match s {
-                ChangeRequestState::Open => PullRequestState::Open,
+        let state_str: Option<String> =
+            update.state.as_ref().map(|s| match s {
+                ChangeRequestState::Open => "open".to_owned(),
                 ChangeRequestState::Closed | ChangeRequestState::Merged => {
-                    PullRequestState::Closed
+                    "closed".to_owned()
                 }
-            }),
-        };
+            });
 
-        if let Some(info) = stack_info {
-            // If the update doesn't include a body, fetch the current PR body
-            // so stack markers are applied to the real body, not an empty string.
-            let current_body = match pr_update.body.take() {
-                Some(body) => body,
-                None => self
-                    .get_pull_request(number)
+        let body_value: Option<String> = match (&update.body, stack_info) {
+            (Some(body), Some(info)) => {
+                Some(crate::stack::update_body_with_stack(body, info))
+            }
+            (Some(body), None) => Some(body.clone()),
+            (None, Some(info)) => {
+                let current_body = self
+                    .fetch_change_request(number)
                     .await
                     .ok()
-                    .and_then(|pr| pr.body)
-                    .unwrap_or_default(),
-            };
-            pr_update.body =
-                Some(crate::stack::update_body_with_stack(&current_body, info));
-        }
+                    .and_then(|cr| cr.body)
+                    .unwrap_or_default();
+                Some(crate::stack::update_body_with_stack(&current_body, info))
+            }
+            (None, None) => None,
+        };
 
-        self.update_pull_request(number, pr_update).await
+        let patch = PatchBody {
+            title: update.title.as_deref(),
+            body: body_value.as_deref(),
+            base: update.base.as_deref(),
+            state: state_str.as_deref(),
+        };
+
+        self.patch_change_request(number, &patch).await
     }
 
     async fn get_change_request(
         &self,
         number: u64,
     ) -> Result<Option<ChangeRequest>> {
-        match self.get_pull_request(number).await {
-            Ok(pr) => Ok(Some(Self::pull_request_to_change_request(pr))),
+        match self.fetch_change_request(number).await {
+            Ok(cr) => Ok(Some(cr)),
             Err(e) => {
                 if e.downcast_ref::<octocrab::Error>()
                     .is_some_and(is_not_found)
@@ -632,7 +550,7 @@ impl ForgeApi for GitHub {
     }
 
     async fn close_change_request(&self, number: u64) -> Result<()> {
-        self.close_pull_request(number).await
+        self.close_change_request_impl(number).await
     }
 
     async fn merge_change_request(
@@ -643,7 +561,7 @@ impl ForgeApi for GitHub {
         message: &str,
         expected_head_oid: git2::Oid,
     ) -> Result<()> {
-        self.merge_pull_request(
+        self.merge_change_request_impl(
             number,
             method,
             title,
@@ -654,13 +572,7 @@ impl ForgeApi for GitHub {
     }
 
     async fn get_mergeability(&self, number: u64) -> Result<Mergeability> {
-        let m = self.get_pull_request_mergeability(number).await?;
-        Ok(Mergeability {
-            mergeable: m.mergeable,
-            base_ref_name: m.base.branch_name().to_owned(),
-            head_oid: m.head_oid,
-            merge_commit: m.merge_commit,
-        })
+        self.fetch_mergeability(number).await
     }
 
     async fn request_reviewers(
@@ -668,11 +580,11 @@ impl ForgeApi for GitHub {
         number: u64,
         reviewers: &ReviewerRequest,
     ) -> Result<()> {
-        let pr_reviewers = PullRequestRequestReviewers {
-            reviewers: reviewers.users.clone(),
-            team_reviewers: reviewers.teams.clone(),
+        let body = RequestReviewersBody {
+            reviewers: &reviewers.users,
+            team_reviewers: &reviewers.teams,
         };
-        GitHub::request_reviewers(self, number, pr_reviewers).await
+        self.post_reviewer_request(number, &body).await
     }
 
     async fn add_labels(&self, number: u64, labels: &[String]) -> Result<()> {
@@ -680,12 +592,8 @@ impl ForgeApi for GitHub {
     }
 
     async fn get_user(&self, username: &str) -> Result<Option<UserInfo>> {
-        match self.get_github_user(username).await {
-            Ok(u) => Ok(Some(UserInfo {
-                login: u.login,
-                name: u.name,
-                is_collaborator: u.is_collaborator,
-            })),
+        match self.fetch_user(username).await {
+            Ok(u) => Ok(Some(u)),
             Err(e) => {
                 if e.downcast_ref::<octocrab::Error>()
                     .is_some_and(is_not_found)
@@ -702,7 +610,7 @@ impl ForgeApi for GitHub {
         org: &str,
         team_slug: &str,
     ) -> Result<Option<TeamInfo>> {
-        match self.get_github_team(org, team_slug).await {
+        match self.fetch_team(org, team_slug).await {
             Ok(t) => Ok(Some(TeamInfo {
                 name: t.name.clone(),
                 slug: t.slug,
@@ -825,7 +733,6 @@ fn is_not_found(err: &octocrab::Error) -> bool {
 
 #[cfg(test)]
 mod tests {
-    // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
 
     #[test]

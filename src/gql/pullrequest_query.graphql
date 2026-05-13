@@ -3,6 +3,7 @@ query PullRequestQuery($name: String!, $owner: String!, $number: Int!) {
     pullRequest(number: $number) {
       number
       state
+      isDraft
       reviewDecision
       title
       body
