@@ -60,22 +60,22 @@ pub struct Cli {
 
     /// Never prompt for input; fail instead of waiting for user interaction.
     /// Also enabled by setting `SPR_NON_INTERACTIVE=1`.
-    #[clap(long)]
+    #[clap(long, global = true)]
     non_interactive: bool,
 
     /// Suppress decorative output; only print essential information (URLs, PR numbers).
     /// Also enabled by setting `SPR_QUIET=1`.
-    #[clap(long, short = 'q')]
+    #[clap(long, short = 'q', global = true)]
     quiet: bool,
 
     /// Preview actions without performing them.
     /// Also enabled by setting `SPR_DRY_RUN=1`.
-    #[clap(long)]
+    #[clap(long, global = true)]
     dry_run: bool,
 
     /// Show detailed progress for each action.
     /// Also enabled by setting `SPR_VERBOSE=1`.
-    #[clap(long)]
+    #[clap(long, global = true)]
     verbose: bool,
 
     #[clap(subcommand)]
