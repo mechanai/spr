@@ -621,12 +621,12 @@ impl ForgeApi for GitHub {
         match self.get_pull_request(number).await {
             Ok(pr) => Ok(Some(Self::pull_request_to_change_request(pr))),
             Err(e) => {
-                let msg = e.to_string().to_lowercase();
-                if msg.contains("404") || msg.contains("not found") {
-                    Ok(None)
-                } else {
-                    Err(e)
+                if e.downcast_ref::<octocrab::Error>()
+                    .is_some_and(is_not_found)
+                {
+                    return Ok(None);
                 }
+                Err(e)
             }
         }
     }
@@ -687,12 +687,12 @@ impl ForgeApi for GitHub {
                 is_collaborator: u.is_collaborator,
             })),
             Err(e) => {
-                let msg = e.to_string().to_lowercase();
-                if msg.contains("404") || msg.contains("not found") {
-                    Ok(None)
-                } else {
-                    Err(e)
+                if e.downcast_ref::<octocrab::Error>()
+                    .is_some_and(is_not_found)
+                {
+                    return Ok(None);
                 }
+                Err(e)
             }
         }
     }
@@ -708,12 +708,12 @@ impl ForgeApi for GitHub {
                 slug: t.slug,
             })),
             Err(e) => {
-                let msg = e.to_string().to_lowercase();
-                if msg.contains("404") || msg.contains("not found") {
-                    Ok(None)
-                } else {
-                    Err(e)
+                if e.downcast_ref::<octocrab::Error>()
+                    .is_some_and(is_not_found)
+                {
+                    return Ok(None);
                 }
+                Err(e)
             }
         }
     }
@@ -810,6 +810,17 @@ impl GitHubBranch {
         // (length 11) removed
         &self.ref_on_github[11..]
     }
+}
+
+/// Check if an octocrab error is a 404 Not Found response.
+fn is_not_found(err: &octocrab::Error) -> bool {
+    matches!(
+        err,
+        octocrab::Error::GitHub {
+            source,
+            ..
+        } if source.status_code == http::StatusCode::NOT_FOUND
+    )
 }
 
 #[cfg(test)]

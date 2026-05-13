@@ -10,6 +10,7 @@ use std::collections::{HashSet, VecDeque};
 
 use crate::{
     config::Config,
+    error::SprError,
     message::{
         MessageSection, MessageSectionsMap, build_commit_message, parse_message,
     },
@@ -156,7 +157,7 @@ impl Git {
                 None,
             )?;
             if index.has_conflicts() {
-                bail!("Rebase failed due to merge conflicts");
+                Err(SprError::Conflict("Rebase failed due to merge conflicts".into()))?;
             }
 
             let tree_oid = index.write_tree_to(self.repo.as_ref())?;

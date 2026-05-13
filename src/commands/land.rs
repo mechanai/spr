@@ -5,11 +5,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-use color_eyre::eyre::{Error, Result, WrapErr as _, bail, eyre};
+use color_eyre::eyre::{Error, Result, WrapErr as _, eyre};
 use indoc::formatdoc;
 use std::time::Duration;
 
 use crate::{
+    error::SprError,
     forge::{ChangeRequestState, ChangeRequestUpdate, ReviewStatus},
     git_remote::PushSpec,
     message::build_github_body_for_merging,
@@ -121,7 +122,7 @@ async fn land_one(
             output("#️⃣ ", &format!("Pull Request #{number}"))?;
             number
         } else {
-            bail!("This commit does not refer to a Pull Request.");
+            Err(SprError::ChangeRequestState("This commit does not refer to a Pull Request.".into()))?
         };
 
     // Load Pull Request information
@@ -129,17 +130,17 @@ async fn land_one(
         .get_change_request(pull_request_number)
         .await?
         .ok_or_else(|| {
-        eyre!("Pull Request #{} not found", pull_request_number)
+        eyre!(SprError::ChangeRequestState(format!("Pull Request #{pull_request_number} not found")))
     })?;
 
     if change_request.state != ChangeRequestState::Open {
-        bail!("This Pull Request is already closed!");
+        Err(SprError::ChangeRequestState("This Pull Request is already closed!".into()))?;
     }
 
     if config.require_approval
         && change_request.review_status != Some(ReviewStatus::Approved)
     {
-        bail!("This Pull Request has not been approved on GitHub.");
+        Err(SprError::ChangeRequestState("This Pull Request has not been approved on GitHub.".into()))?;
     }
 
     output("🛫", "Getting started...")?;

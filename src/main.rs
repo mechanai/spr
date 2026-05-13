@@ -23,6 +23,7 @@ use clap::{Parser, Subcommand};
 use color_eyre::eyre::{Error, Result, eyre};
 use log::debug;
 use spr::commands;
+use spr::error::SprError;
 
 #[derive(Parser, Debug)]
 #[clap(
@@ -146,9 +147,13 @@ pub async fn spr() -> Result<()> {
     let git_config = repo.config()?;
 
     let github_repository = match cli.github_repository {
-        Some(v) => Ok(v),
-        None => git_config.get_string("spr.githubRepository"),
-    }?;
+        Some(v) => v,
+        None => git_config.get_string("spr.githubRepository").map_err(|e| {
+            eyre!(SprError::Auth(format!(
+                "spr.githubRepository not configured: {e}"
+            )))
+        })?,
+    };
 
     let github_master_branch = match cli.github_master_branch {
         Some(v) => Ok::<String, git2::Error>(v),
@@ -158,9 +163,13 @@ pub async fn spr() -> Result<()> {
     }?;
 
     let branch_prefix = match cli.branch_prefix {
-        Some(v) => Ok(v),
-        None => git_config.get_string("spr.branchPrefix"),
-    }?;
+        Some(v) => v,
+        None => git_config.get_string("spr.branchPrefix").map_err(|e| {
+            eyre!(SprError::Auth(format!(
+                "spr.branchPrefix not configured: {e}"
+            )))
+        })?,
+    };
 
     let (github_owner, github_repo) = {
         let captures = lazy_regex::regex!(r#"^([\w\-\.]+)/([\w\-\.]+)$"#)
@@ -194,10 +203,10 @@ pub async fn spr() -> Result<()> {
         Some(v) => v,
         None => spr::token::find_token("github.com")
             .or_else(|| git_config.get_string("spr.githubAuthToken").ok())
-            .ok_or_else(|| eyre!(
+            .ok_or_else(|| eyre!(SprError::Auth(
                 "No GitHub auth token found. Set GITHUB_TOKEN, run 'gh auth login', \
-                 or run 'spr init' to configure one."
-            ))?,
+                 or run 'spr init' to configure one.".into()
+            )))?,
     };
 
     let non_interactive = cli.non_interactive
@@ -302,38 +311,13 @@ async fn main() {
     match result {
         Ok(()) => std::process::exit(0),
         Err(err) => {
-            let msg = format!("{err:#}");
-            eprintln!("error: {msg}");
+            eprintln!("error: {err:#}");
 
-            // Exit code 2: auth/config issues
-            if msg.contains("auth token")
-                || msg.contains("githubAuthToken")
-                || msg.contains("githubRepository")
-                || msg.contains("branchPrefix")
-            {
-                std::process::exit(2);
-            }
+            let exit_code = err
+                .downcast_ref::<SprError>()
+                .map_or(1, SprError::exit_code);
 
-            // Exit code 3: conflicts
-            if msg.contains("conflict") || msg.contains("cherry-picked") {
-                std::process::exit(3);
-            }
-
-            // Exit code 4: PR state issue (closed, not approved, etc.)
-            if msg.contains("closed")
-                || msg.contains("not approved")
-                || msg.contains("Pull request")
-            {
-                std::process::exit(4);
-            }
-
-            // Exit code 130: user abort
-            if msg.contains("Aborted as per user request") {
-                std::process::exit(130);
-            }
-
-            // Exit code 1: generic error
-            std::process::exit(1);
+            std::process::exit(exit_code);
         }
     }
 }
