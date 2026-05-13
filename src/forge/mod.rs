@@ -233,8 +233,8 @@ mod tests {
             head_oid: git2::Oid::zero(),
             is_draft: false,
             state: ChangeRequestState::Open,
-            sections: Default::default(),
-            reviewers: Default::default(),
+            sections: std::collections::BTreeMap::default(),
+            reviewers: HashMap::default(),
             review_status: None,
             merge_commit: None,
         };

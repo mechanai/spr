@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn test_empty() {
-        assert_eq!(slugify(""), "".to_string());
+        assert_eq!(slugify(""), String::new());
     }
 
     #[test]

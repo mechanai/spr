@@ -42,6 +42,7 @@ impl DryRunForge {
 
     /// For tests only — no inner forge, reads return None/empty.
     #[cfg(test)]
+    #[must_use]
     pub fn without_inner(verbose: bool, cr_term: &str) -> Self {
         Self {
             inner: None,

@@ -236,7 +236,7 @@ mod tests {
     fn test_parse_empty() {
         assert_eq!(
             parse_message("", MessageSection::Title),
-            [(MessageSection::Title, "".to_string())].into()
+            [(MessageSection::Title, String::new())].into()
         );
     }
 
