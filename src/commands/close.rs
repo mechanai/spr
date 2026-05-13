@@ -131,3 +131,177 @@ async fn close_impl(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    use crate::forge::{
+        ChangeRequest, ChangeRequestState, ForgeApiMock,
+    };
+    use crate::test_helpers::{TestRepo, test_config};
+    use unimock::*;
+
+    fn make_open_cr(number: u64, head: &str, base: &str) -> ChangeRequest {
+        ChangeRequest {
+            number,
+            title: format!("PR #{number}"),
+            body: None,
+            base_ref_name: base.into(),
+            base_oid: git2::Oid::zero(),
+            head_ref_name: head.into(),
+            head_oid: git2::Oid::zero(),
+            is_draft: false,
+            state: ChangeRequestState::Open,
+            sections: BTreeMap::default(),
+            reviewers: std::collections::HashMap::default(),
+            review_status: None,
+            merge_commit: None,
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn close_empty_branch_succeeds() {
+        let test_repo = TestRepo::new();
+        let git = test_repo.git();
+        let config = test_config();
+
+        let forge = Unimock::new(
+            ForgeApiMock::fetch_branch
+                .some_call(matching!(_))
+                .returns(Ok(test_repo.base_oid)),
+        );
+
+        let opts = CloseOptions { all: false };
+        let result = close(opts, &git, &forge, &config).await;
+        assert!(result.is_ok(), "close on empty branch should succeed: {result:?}");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn close_commit_without_pr_errors() {
+        let test_repo = TestRepo::new();
+        test_repo.add_commit("feat: no pr here\n\nJust a commit");
+        let git = test_repo.git();
+        let config = test_config();
+
+        let forge = Unimock::new(
+            ForgeApiMock::fetch_branch
+                .some_call(matching!(_))
+                .returns(Ok(test_repo.base_oid)),
+        );
+
+        let opts = CloseOptions { all: false };
+        let result = close(opts, &git, &forge, &config).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("does not refer to a Pull Request"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn close_already_closed_errors() {
+        let test_repo = TestRepo::new();
+        test_repo.add_commit(
+            "feat: widget\n\nPull Request: https://github.com/test-owner/test-repo/pull/10",
+        );
+        let git = test_repo.git();
+        let config = test_config();
+
+        let mut cr = make_open_cr(10, "spr/main/widget", "main");
+        cr.state = ChangeRequestState::Closed;
+
+        let forge = Unimock::new((
+            ForgeApiMock::fetch_branch
+                .some_call(matching!(_))
+                .returns(Ok(test_repo.base_oid)),
+            ForgeApiMock::get_change_request
+                .some_call(matching!(_))
+                .returns(Ok(Some(cr))),
+        ));
+
+        let opts = CloseOptions { all: false };
+        let result = close(opts, &git, &forge, &config).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("already closed"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn close_open_pr_succeeds() {
+        let test_repo = TestRepo::new();
+        test_repo.add_commit(
+            "feat: widget\n\nPull Request: https://github.com/test-owner/test-repo/pull/10",
+        );
+        let git = test_repo.git();
+        let config = test_config();
+
+        let cr = make_open_cr(10, "spr/main/widget", "main");
+
+        let forge = Unimock::new((
+            ForgeApiMock::fetch_branch
+                .some_call(matching!(_))
+                .returns(Ok(test_repo.base_oid)),
+            ForgeApiMock::get_change_request
+                .some_call(matching!(_))
+                .returns(Ok(Some(cr))),
+            ForgeApiMock::close_change_request
+                .some_call(matching!(_))
+                .returns(Ok(())),
+            ForgeApiMock::push_to_remote
+                .some_call(matching!(_))
+                .returns(Ok(())),
+        ));
+
+        let opts = CloseOptions { all: false };
+        let result = close(opts, &git, &forge, &config).await;
+        assert!(result.is_ok(), "close should succeed: {result:?}");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn close_removes_pr_section_from_commit() {
+        let test_repo = TestRepo::new();
+        test_repo.add_commit(
+            "feat: widget\n\nSome summary\n\nPull Request: https://github.com/test-owner/test-repo/pull/10",
+        );
+        let git = test_repo.git();
+        let config = test_config();
+
+        let cr = make_open_cr(10, "spr/main/widget", "main");
+
+        let forge = Unimock::new((
+            ForgeApiMock::fetch_branch
+                .some_call(matching!(_))
+                .returns(Ok(test_repo.base_oid)),
+            ForgeApiMock::get_change_request
+                .some_call(matching!(_))
+                .returns(Ok(Some(cr))),
+            ForgeApiMock::close_change_request
+                .some_call(matching!(_))
+                .returns(Ok(())),
+            ForgeApiMock::push_to_remote
+                .some_call(matching!(_))
+                .returns(Ok(())),
+        ));
+
+        let opts = CloseOptions { all: false };
+        let result = close(opts, &git, &forge, &config).await;
+        assert!(result.is_ok(), "close should succeed: {result:?}");
+
+        // Verify the commit message no longer contains the PR section
+        let repo = git2::Repository::open(test_repo.dir.path()).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        let msg = head.message().unwrap();
+        assert!(
+            !msg.contains("Pull Request:"),
+            "commit message should not contain Pull Request section after close, got: {msg}"
+        );
+        assert!(
+            msg.contains("feat: widget"),
+            "commit message should still contain title, got: {msg}"
+        );
+    }
+}

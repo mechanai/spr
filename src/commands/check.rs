@@ -65,3 +65,124 @@ pub async fn check(
     output_essential("check: pass")?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forge::ForgeApiMock;
+    use crate::test_helpers::{TestRepo, test_config};
+    use unimock::*;
+
+    fn base_clauses(base_oid: git2::Oid) -> impl Clause {
+        ForgeApiMock::fetch_branch
+            .some_call(matching!(_))
+            .returns(Ok(base_oid))
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn no_commits_errors() {
+        let test_repo = TestRepo::new();
+        let git = test_repo.git();
+        let config = test_config();
+
+        let forge = Unimock::new(base_clauses(test_repo.base_oid));
+
+        let opts = CheckOptions { cherry_pick: false };
+        let result = check(opts, &git, &forge, &config).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No commits"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn valid_commit_passes() {
+        let test_repo = TestRepo::new();
+        test_repo.add_commit("feat: add widget\n\nSome summary here");
+        let git = test_repo.git();
+        let config = test_config();
+
+        let forge = Unimock::new(base_clauses(test_repo.base_oid));
+
+        let opts = CheckOptions { cherry_pick: false };
+        let result = check(opts, &git, &forge, &config).await;
+        assert!(result.is_ok(), "check should pass: {result:?}");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn missing_title_fails() {
+        let test_repo = TestRepo::new();
+        // git2 allows empty commit messages; parse_message("") → empty Title
+        test_repo.add_commit("");
+        let git = test_repo.git();
+        let config = test_config();
+
+        let forge = Unimock::new(base_clauses(test_repo.base_oid));
+
+        let opts = CheckOptions { cherry_pick: false };
+        let result = check(opts, &git, &forge, &config).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("title"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn missing_test_plan_fails_when_required() {
+        let test_repo = TestRepo::new();
+        test_repo.add_commit("feat: add widget\n\nSummary here");
+        let git = test_repo.git();
+        let mut config = test_config();
+        config.require_test_plan = true;
+
+        let forge = Unimock::new(base_clauses(test_repo.base_oid));
+
+        let opts = CheckOptions { cherry_pick: false };
+        let result = check(opts, &git, &forge, &config).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Test Plan"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn with_test_plan_passes_when_required() {
+        let test_repo = TestRepo::new();
+        test_repo.add_commit(
+            "feat: add widget\n\nSummary here\n\nTest Plan: run cargo test",
+        );
+        let git = test_repo.git();
+        let mut config = test_config();
+        config.require_test_plan = true;
+
+        let forge = Unimock::new(base_clauses(test_repo.base_oid));
+
+        let opts = CheckOptions { cherry_pick: false };
+        let result = check(opts, &git, &forge, &config).await;
+        assert!(result.is_ok(), "check should pass with test plan: {result:?}");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn reports_existing_pr() {
+        let test_repo = TestRepo::new();
+        test_repo.add_commit(
+            "feat: widget\n\nPull Request: https://github.com/test-owner/test-repo/pull/99",
+        );
+        let git = test_repo.git();
+        let config = test_config();
+
+        let forge = Unimock::new(base_clauses(test_repo.base_oid));
+
+        let opts = CheckOptions { cherry_pick: false };
+        let result = check(opts, &git, &forge, &config).await;
+        assert!(result.is_ok(), "check should pass: {result:?}");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn cherry_pick_clean() {
+        let test_repo = TestRepo::new();
+        test_repo.add_commit("feat: add widget\n\nClean change");
+        let git = test_repo.git();
+        let config = test_config();
+
+        let forge = Unimock::new(base_clauses(test_repo.base_oid));
+
+        let opts = CheckOptions { cherry_pick: true };
+        let result = check(opts, &git, &forge, &config).await;
+        assert!(result.is_ok(), "cherry-pick should be clean: {result:?}");
+    }
+}

@@ -27,3 +27,7 @@ pub mod output;
 pub mod stack;
 pub mod token;
 pub mod utils;
+
+#[cfg(test)]
+#[allow(clippy::must_use_candidate, clippy::new_without_default)]
+pub mod test_helpers;

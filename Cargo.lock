@@ -1877,6 +1877,7 @@ dependencies = [
  "openssl",
  "secrecy",
  "serde",
+ "tempfile",
  "textwrap",
  "tokio",
  "unicode-normalization",
