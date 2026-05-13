@@ -5,6 +5,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// unimock generates match arms that trigger this lint on parameterless trait methods.
+#![allow(clippy::ignored_unit_patterns)]
+
 mod dry_run;
 mod verbose;
 pub use dry_run::DryRunForge;
@@ -15,6 +18,8 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use color_eyre::Result;
 use git2::Oid;
+#[cfg(test)]
+use unimock::unimock;
 
 use crate::config::MergeMethod;
 use crate::git::Git;
@@ -113,6 +118,7 @@ pub struct Mergeability {
 ///
 /// Implementations exist for GitHub (and in the future, Forgejo, etc.).
 /// Commands use `&dyn ForgeApi` so they are decoupled from any specific forge.
+#[cfg_attr(test, unimock(api=ForgeApiMock))]
 #[async_trait(?Send)]
 pub trait ForgeApi {
     // Change request lifecycle
