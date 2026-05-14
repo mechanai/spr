@@ -1,4 +1,6 @@
-on: push
+on:
+  push:
+  pull_request:
 name: Test and lint
 
 # Make sure CI fails on all warnings, including Clippy lints
