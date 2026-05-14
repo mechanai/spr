@@ -73,10 +73,10 @@ async fn close_impl(
 ) -> Result<()> {
     let pull_request_number =
         if let Some(number) = prepared_commit.pull_request_number {
-            output("#️⃣ ", &format!("Pull Request #{number}"))?;
+            output("#️⃣ ", &format!("{} #{number}", forge.change_request_term_full()))?;
             number
         } else {
-            Err(SprError::ChangeRequestState("This commit does not refer to a Pull Request.".into()))?
+            Err(SprError::ChangeRequestState(format!("This commit does not refer to a {}.", forge.change_request_term_full())))?
         };
 
     // Load Pull Request information
@@ -84,11 +84,11 @@ async fn close_impl(
         .get_change_request(pull_request_number)
         .await?
         .ok_or_else(|| {
-        color_eyre::eyre::eyre!("PR #{} not found", pull_request_number)
+        color_eyre::eyre::eyre!("{} #{} not found", forge.change_request_term(), pull_request_number)
     })?;
 
     if change_request.state != crate::forge::ChangeRequestState::Open {
-        Err(SprError::ChangeRequestState("This Pull Request is already closed!".into()))?;
+        Err(SprError::ChangeRequestState(format!("This {} is already closed!", forge.change_request_term_full())))?;
     }
 
     output("📖", "Getting started...")?;
@@ -100,7 +100,7 @@ async fn close_impl(
     match result {
         Ok(()) => (),
         Err(error) => {
-            output("❌", "GitHub Pull Request close failed")?;
+            output("❌", &format!("{} close failed", forge.change_request_term_full()))?;
 
             return Err(error);
         }
@@ -185,11 +185,14 @@ mod tests {
         let git = test_repo.git();
         let config = test_config();
 
-        let forge = Unimock::new(
+        let forge = Unimock::new((
             ForgeApiMock::fetch_branch
                 .some_call(matching!(_))
                 .returns(Ok(test_repo.base_oid)),
-        );
+            ForgeApiMock::change_request_term_full
+                .some_call(matching!())
+                .returns("Pull Request"),
+        ));
 
         let opts = CloseOptions { all: false };
         let result = close(opts, &git, &forge, &config).await;
@@ -219,6 +222,9 @@ mod tests {
             ForgeApiMock::get_change_request
                 .some_call(matching!(_))
                 .returns(Ok(Some(cr))),
+            ForgeApiMock::change_request_term_full
+                .each_call(matching!())
+                .returns("Pull Request"),
         ));
 
         let opts = CloseOptions { all: false };
@@ -254,6 +260,9 @@ mod tests {
             ForgeApiMock::push_to_remote
                 .some_call(matching!(_))
                 .returns(Ok(())),
+            ForgeApiMock::change_request_term_full
+                .some_call(matching!())
+                .returns("Pull Request"),
         ));
 
         let opts = CloseOptions { all: false };
@@ -285,6 +294,9 @@ mod tests {
             ForgeApiMock::push_to_remote
                 .some_call(matching!(_))
                 .returns(Ok(())),
+            ForgeApiMock::change_request_term_full
+                .some_call(matching!())
+                .returns("Pull Request"),
         ));
 
         let opts = CloseOptions { all: false };
