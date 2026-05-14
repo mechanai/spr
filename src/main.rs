@@ -323,6 +323,10 @@ pub async fn spr() -> Result<()> {
 async fn main() {
     env_logger::init();
 
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     let result = tokio::task::LocalSet::new().run_until(spr()).await;
     match result {
         Ok(()) => std::process::exit(0),
