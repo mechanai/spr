@@ -22,7 +22,7 @@ use crate::{
     utils::{parse_name_list, remove_all_parens, slugify},
 };
 use git2::Oid;
-use indoc::{formatdoc, indoc};
+
 
 #[derive(Debug, clap::Parser)]
 pub struct DiffOptions {
@@ -307,7 +307,8 @@ async fn diff_impl(
         output(
             "#️⃣ ",
             &format!(
-                "Pull Request #{}: {}",
+                "{} #{}: {}",
+                forge.change_request_term_full(),
                 number,
                 config.pull_request_url(number)
             ),
@@ -322,9 +323,10 @@ async fn diff_impl(
         if cr.state == ChangeRequestState::Closed
             || cr.state == ChangeRequestState::Merged
         {
-            return Err(Error::msg(formatdoc!(
-                "Pull request is closed. If you want to open a new one, \
-                 remove the 'Pull Request' section from the commit message."
+            return Err(Error::msg(format!(
+                "{} is closed. If you want to open a new one, \
+                 remove the 'Pull Request' section from the commit message.",
+                forge.change_request_term_full()
             )));
         }
 
@@ -335,13 +337,14 @@ async fn diff_impl(
             if !updates.is_empty() {
                 output(
                     "⚠️",
-                    indoc!(
-                        "The Pull Request's title/message differ from the \
-                         local commit's message.
+                    &format!(
+                        "The {}'s title/message differ from the \
+                         local commit's message.\n\
                          Use `spr diff --update-message` to overwrite the \
-                         title and message on GitHub with the local message, \
+                          title and message on the remote with the local message, \
                          or `spr amend` to go the other way (rewrite the local \
-                         commit message with what is on GitHub)."
+                         commit message with what is on the remote).",
+                        forge.change_request_term_full()
                     ),
                 )?;
             }
@@ -478,7 +481,7 @@ async fn diff_impl(
                     forge
                         .update_change_request(cr.number, &updates, stack_info)
                         .await?;
-                    output("✍", "Updated commit message on GitHub")?;
+                    output("✍", &format!("Updated {} message remotely", forge.change_request_term_full().to_lowercase()))?;
                 }
             }
 
@@ -666,7 +669,8 @@ async fn diff_impl(
             output(
                 "⚾",
                 &format!(
-                    "Commit was rebased - updating Pull Request #{}",
+                    "Commit was rebased - updating {} #{}",
+                    forge.change_request_term_full(),
                     cr.number
                 ),
             )?;
@@ -674,7 +678,8 @@ async fn diff_impl(
             output(
                 "🔁",
                 &format!(
-                    "Commit was changed - updating Pull Request #{}",
+                    "Commit was changed - updating {} #{}",
+                    forge.change_request_term_full(),
                     cr.number
                 ),
             )?;
@@ -771,7 +776,8 @@ async fn diff_impl(
         output(
             "✨",
             &format!(
-                "Created new Pull Request #{}: {}",
+                "Created new {} #{}: {}",
+                forge.change_request_term_full(),
                 pull_request_number, &pull_request_url,
             ),
         )?;
