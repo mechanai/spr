@@ -440,7 +440,8 @@ impl GitHub {
             Ok(())
         } else {
             Err(eyre!(
-                "Pull Request merge failed: {}",
+                "{} merge failed: {}",
+                self.change_request_term_full(),
                 merge.message.unwrap_or_default()
             ))
         }
