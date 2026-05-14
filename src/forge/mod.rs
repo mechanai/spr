@@ -91,7 +91,7 @@ impl ChangeRequestUpdate {
         if new_title.as_deref() != Some(&cr.title) {
             self.title = new_title;
         }
-        let new_body = crate::message::build_github_body(message);
+        let new_body = crate::message::build_forge_body(message);
         if cr.body.as_deref() != Some(&new_body) {
             self.body = Some(new_body);
         }

@@ -12,7 +12,7 @@ use crate::{
     git::PreparedCommit,
     git_remote::GitRemote,
     message::{
-        MessageSection, MessageSectionsMap, build_github_body, parse_message,
+        MessageSection, MessageSectionsMap, build_forge_body, parse_message,
     },
 };
 use async_trait::async_trait;
@@ -277,7 +277,7 @@ impl GitHub {
         draft: bool,
         stack_info: Option<&str>,
     ) -> Result<u64> {
-        let mut body = build_github_body(message);
+        let mut body = build_forge_body(message);
         if let Some(info) = stack_info {
             body.push_str("\n\n");
             body.push_str(&crate::stack::wrap_with_markers(info));

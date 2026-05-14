@@ -13,7 +13,7 @@ use crate::{
     error::SprError,
     forge::{ChangeRequestState, ChangeRequestUpdate, ReviewStatus},
     git_remote::PushSpec,
-    message::build_github_body_for_merging,
+    message::build_forge_body_for_merging,
     output::{output, write_commit_title},
 };
 
@@ -355,7 +355,7 @@ async fn land_one(
                     pull_request_number,
                     config.merge_method,
                     &change_request.title,
-                    &build_github_body_for_merging(&change_request.sections),
+                    &build_forge_body_for_merging(&change_request.sections),
                     pr_head_oid,
                 )
                 .await

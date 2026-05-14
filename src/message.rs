@@ -181,7 +181,7 @@ pub fn build_commit_message(section_texts: &MessageSectionsMap) -> String {
 }
 
 #[must_use]
-pub fn build_github_body(section_texts: &MessageSectionsMap) -> String {
+pub fn build_forge_body(section_texts: &MessageSectionsMap) -> String {
     build_message(
         section_texts,
         &[MessageSection::Summary, MessageSection::TestPlan],
@@ -189,7 +189,7 @@ pub fn build_github_body(section_texts: &MessageSectionsMap) -> String {
 }
 
 #[must_use]
-pub fn build_github_body_for_merging(
+pub fn build_forge_body_for_merging(
     section_texts: &MessageSectionsMap,
 ) -> String {
     build_message(
