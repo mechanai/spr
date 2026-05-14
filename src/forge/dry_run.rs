@@ -27,27 +27,31 @@ pub struct DryRunForge {
     inner: Option<Box<dyn ForgeApi>>,
     verbose: bool,
     cr_term: String,
+    cr_term_full: String,
 }
 
 impl DryRunForge {
     #[must_use]
     pub fn new(inner: Box<dyn ForgeApi>, verbose: bool) -> Self {
         let cr_term = inner.change_request_term().to_owned();
+        let cr_term_full = inner.change_request_term_full().to_string();
         Self {
             inner: Some(inner),
             verbose,
             cr_term,
+            cr_term_full,
         }
     }
 
     /// For tests only — no inner forge, reads return None/empty.
     #[cfg(test)]
     #[must_use]
-    pub fn without_inner(verbose: bool, cr_term: &str) -> Self {
+    pub fn without_inner(verbose: bool, cr_term: &str, cr_term_full: &str) -> Self {
         Self {
             inner: None,
             verbose,
             cr_term: cr_term.to_owned(),
+            cr_term_full: cr_term_full.to_owned(),
         }
     }
 
@@ -246,6 +250,10 @@ impl ForgeApi for DryRunForge {
         &self.cr_term
     }
 
+    fn change_request_term_full(&self) -> &str {
+        &self.cr_term_full
+    }
+
     fn is_dry_run(&self) -> bool {
         true
     }
@@ -257,7 +265,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn test_dry_run_create_change_request() {
-        let forge = DryRunForge::without_inner(false, "PR");
+        let forge = DryRunForge::without_inner(false, "PR", "Pull Request");
         let message = crate::message::MessageSectionsMap::new();
         let result = forge
             .create_change_request(
@@ -274,7 +282,7 @@ mod tests {
 
     #[test]
     fn test_dry_run_change_request_term() {
-        let forge = DryRunForge::without_inner(false, "PR");
+        let forge = DryRunForge::without_inner(false, "PR", "Pull Request");
         assert_eq!(forge.change_request_term(), "PR");
     }
 }

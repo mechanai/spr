@@ -190,6 +190,7 @@ pub trait ForgeApi {
 
     // Display — forge-native terminology for user-facing output
     fn change_request_term(&self) -> &str;
+    fn change_request_term_full(&self) -> &str;
 
     /// Whether this forge is in dry-run mode (no writes performed).
     fn is_dry_run(&self) -> bool {

@@ -662,6 +662,10 @@ impl ForgeApi for GitHub {
     fn change_request_term(&self) -> &'static str {
         "PR"
     }
+
+    fn change_request_term_full(&self) -> &'static str {
+        "Pull Request"
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -185,6 +185,10 @@ impl<T: ForgeApi> ForgeApi for VerboseForge<T> {
         self.inner.change_request_term()
     }
 
+    fn change_request_term_full(&self) -> &str {
+        self.inner.change_request_term_full()
+    }
+
     fn is_dry_run(&self) -> bool {
         self.inner.is_dry_run()
     }
