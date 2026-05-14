@@ -35,11 +35,12 @@ pub async fn patch(
     let pr = forge
         .get_change_request(opts.pull_request)
         .await?
-        .ok_or_else(|| color_eyre::eyre::eyre!("PR not found"))?;
+        .ok_or_else(|| color_eyre::eyre::eyre!("{} not found", forge.change_request_term()))?;
     output(
         "#️⃣ ",
         &format!(
-            "Pull Request #{}: {}",
+            "{} #{}: {}",
+            forge.change_request_term_full(),
             pr.number,
             pr.sections
                 .get(&MessageSection::Title)
@@ -54,7 +55,7 @@ pub async fn patch(
     };
 
     let patch_branch_oid = if let Some(oid) = pr.merge_commit {
-        output("❗", "Pull Request has been merged")?;
+        output("❗", &format!("{} has been merged", forge.change_request_term_full()))?;
 
         oid
     } else {
@@ -98,7 +99,7 @@ pub async fn patch(
 
                 pr_default_branch_oid = git.create_derived_commit(
                     pr_base_oid,
-                    &format!("[𝘀𝗽𝗿] Base of Pull Request #{}", pr.number),
+                    &format!("[𝘀𝗽𝗿] Base of {} #{}", forge.change_request_term_full(), pr.number),
                     pr_base_tree,
                     &[pr_default_branch_oid],
                 )?;

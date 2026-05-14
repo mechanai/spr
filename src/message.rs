@@ -50,7 +50,7 @@ pub fn message_section_by_label(label: &str) -> Option<MessageSection> {
         "test plan" => Some(TestPlan),
         "reviewer" | "reviewers" => Some(Reviewers),
         "reviewed by" => Some(ReviewedBy),
-        "pull request" => Some(PullRequest),
+        "pull request" | "merge request" | "change request" => Some(PullRequest),
         _ => None,
     }
 }
@@ -181,7 +181,7 @@ pub fn build_commit_message(section_texts: &MessageSectionsMap) -> String {
 }
 
 #[must_use]
-pub fn build_github_body(section_texts: &MessageSectionsMap) -> String {
+pub fn build_forge_body(section_texts: &MessageSectionsMap) -> String {
     build_message(
         section_texts,
         &[MessageSection::Summary, MessageSection::TestPlan],
@@ -189,7 +189,7 @@ pub fn build_github_body(section_texts: &MessageSectionsMap) -> String {
 }
 
 #[must_use]
-pub fn build_github_body_for_merging(
+pub fn build_forge_body_for_merging(
     section_texts: &MessageSectionsMap,
 ) -> String {
     build_message(
@@ -319,6 +319,42 @@ Reviewer:    a, b, c"#,
                 (MessageSection::Reviewers, "a, b, c".to_string()),
             ]
             .into()
+        );
+    }
+
+    #[test]
+    fn test_parse_merge_request_synonym() {
+        let result = parse_message(
+            "Hello\n\nMerge Request: https://example.com/mr/1",
+            MessageSection::Title,
+        );
+        assert_eq!(
+            result.get(&MessageSection::PullRequest),
+            Some(&"https://example.com/mr/1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_change_request_synonym() {
+        let result = parse_message(
+            "Hello\n\nChange Request: https://example.com/cr/1",
+            MessageSection::Title,
+        );
+        assert_eq!(
+            result.get(&MessageSection::PullRequest),
+            Some(&"https://example.com/cr/1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_pull_request_still_works() {
+        let result = parse_message(
+            "Hello\n\nPull Request: https://github.com/foo/bar/pull/1",
+            MessageSection::Title,
+        );
+        assert_eq!(
+            result.get(&MessageSection::PullRequest),
+            Some(&"https://github.com/foo/bar/pull/1".to_string())
         );
     }
 }

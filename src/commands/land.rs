@@ -13,7 +13,7 @@ use crate::{
     error::SprError,
     forge::{ChangeRequestState, ChangeRequestUpdate, ReviewStatus},
     git_remote::PushSpec,
-    message::build_github_body_for_merging,
+    message::build_forge_body_for_merging,
     output::{output, write_commit_title},
 };
 
@@ -71,8 +71,9 @@ pub async fn land(
                     return Err(e);
                 }
                 // Landed some but hit a blocker — that's fine
+                let term = forge.change_request_term();
                 crate::output::output_essential(&format!(
-                    "landed {landed} PR(s), stopped: {e}"
+                    "landed {landed} {term}(s), stopped: {e}"
                 ))?;
                 return Ok(());
             }
@@ -80,7 +81,8 @@ pub async fn land(
     }
 
     if landed > 0 {
-        crate::output::output_essential(&format!("landed {landed} PR(s)"))?;
+        let term = forge.change_request_term();
+        crate::output::output_essential(&format!("landed {landed} {term}(s)"))?;
     } else {
         crate::output::output_essential("nothing to land")?;
     }
@@ -119,10 +121,10 @@ async fn land_one(
 
     let pull_request_number =
         if let Some(number) = prepared_commit.pull_request_number {
-            output("#️⃣ ", &format!("Pull Request #{number}"))?;
+            output("#️⃣ ", &format!("{} #{number}", forge.change_request_term_full()))?;
             number
         } else {
-            Err(SprError::ChangeRequestState("This commit does not refer to a Pull Request.".into()))?
+            Err(SprError::ChangeRequestState(format!("This commit does not refer to a {}.", forge.change_request_term_full())))?
         };
 
     // Load Pull Request information
@@ -130,17 +132,17 @@ async fn land_one(
         .get_change_request(pull_request_number)
         .await?
         .ok_or_else(|| {
-        eyre!(SprError::ChangeRequestState(format!("Pull Request #{pull_request_number} not found")))
+        eyre!(SprError::ChangeRequestState(format!("{} #{pull_request_number} not found", forge.change_request_term_full())))
     })?;
 
     if change_request.state != ChangeRequestState::Open {
-        Err(SprError::ChangeRequestState("This Pull Request is already closed!".into()))?;
+        Err(SprError::ChangeRequestState(format!("This {} is already closed!", forge.change_request_term_full())))?;
     }
 
     if config.require_approval
         && change_request.review_status != Some(ReviewStatus::Approved)
     {
-        Err(SprError::ChangeRequestState("This Pull Request has not been approved on GitHub.".into()))?;
+        Err(SprError::ChangeRequestState(format!("This {} has not been approved.", forge.change_request_term_full())))?;
     }
 
     output("🛫", "Getting started...")?;
@@ -186,9 +188,10 @@ async fn land_one(
 
     if !merge_matches_cherrypick {
         return Err(Error::msg(formatdoc!(
-            "This commit has been updated and/or rebased since the pull \
-             request was last updated. Please run `spr diff` to update the \
-             pull request and then try `spr land` again!"
+            "This commit has been updated and/or rebased since the {cr} \
+             was last updated. Please run `spr diff` to update the \
+             {cr} and then try `spr land` again!",
+            cr = forge.change_request_term_full().to_lowercase(),
         )));
     }
 
@@ -301,7 +304,8 @@ async fn land_one(
 
         if mergeability.head_oid != pr_head_oid {
             break Err(eyre!(
-                "The Pull Request seems to have been updated externally. Please try again!"
+                "The {} seems to have been updated externally. Please try again!",
+                forge.change_request_term_full()
             ));
         }
 
@@ -310,8 +314,9 @@ async fn land_one(
         {
             if mergeability.mergeable != Some(true) {
                 break Err(Error::msg(formatdoc!(
-                    "GitHub concluded the Pull Request is not mergeable at \
-                    this point. Please rebase your changes and try again!"
+                    "The {cr} is not mergeable at \
+                    this point. Please rebase your changes and try again!",
+                    cr = forge.change_request_term_full().to_lowercase(),
                 )));
             }
 
@@ -320,9 +325,10 @@ async fn land_one(
 
                 if git.get_tree_oid_for_commit(merge_commit)? != our_tree_oid {
                     return Err(Error::msg(formatdoc!(
-                    "This commit has been updated and/or rebased since the pull
-                     request was last updated. Please run `spr diff` to update the pull
-                     request and then try `spr land` again!"
+                    "This commit has been updated and/or rebased since the {cr}
+                     was last updated. Please run `spr diff` to update the {cr}
+                     and then try `spr land` again!",
+                    cr = forge.change_request_term_full().to_lowercase(),
                 )));
                 }
             }
@@ -333,7 +339,8 @@ async fn land_one(
         if attempts >= 10 {
             // After ten failed attempts we give up.
             break Err(eyre!(
-                "GitHub Pull Request did not update. Please try again!"
+                "{} did not update. Please try again!",
+                forge.change_request_term_full()
             ));
         }
 
@@ -348,7 +355,7 @@ async fn land_one(
                     pull_request_number,
                     config.merge_method,
                     &change_request.title,
-                    &build_github_body_for_merging(&change_request.sections),
+                    &build_forge_body_for_merging(&change_request.sections),
                     pr_head_oid,
                 )
                 .await
@@ -369,7 +376,7 @@ async fn land_one(
                 )?;
         }
         Err(mut error) => {
-            output("❌", "GitHub Pull Request merge failed")?;
+            output("❌", &format!("{} merge failed", forge.change_request_term_full()))?;
 
             // If we changed the target branch of the Pull Request earlier,
             // then undo this change now.
