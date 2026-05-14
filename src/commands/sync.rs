@@ -69,7 +69,7 @@ pub async fn sync(
 
     // Optionally update PRs
     if opts.update {
-        output("📤", "Updating pull requests")?;
+        output("📤", &format!("Updating {}s", forge.change_request_term_full().to_lowercase()))?;
 
         let diff_opts = crate::commands::diff::DiffOptions {
             all: true,
