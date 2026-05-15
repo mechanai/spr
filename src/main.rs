@@ -293,7 +293,7 @@ pub async fn spr() -> Result<()> {
         Commands::Amend(opts) => {
             commands::amend::amend(opts, &git, &*forge, &config).await?;
         }
-        Commands::List => commands::list::list(&config).await?,
+        Commands::List => commands::list::list(&*forge).await?,
         Commands::Patch(opts) => {
             commands::patch::patch(opts, &git, &*forge, &config).await?;
         }
