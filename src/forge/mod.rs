@@ -26,6 +26,150 @@ use crate::git::Git;
 use crate::git_remote::PushSpec;
 use crate::message::MessageSectionsMap;
 
+/// Supported forge backends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ForgeType {
+    GitHub,
+}
+
+impl std::fmt::Display for ForgeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::GitHub => write!(f, "github"),
+        }
+    }
+}
+
+impl std::str::FromStr for ForgeType {
+    type Err = color_eyre::eyre::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "github" => Ok(Self::GitHub),
+            other => Err(color_eyre::eyre::eyre!(
+                "Unknown forge type '{other}'. Supported values: github"
+            )),
+        }
+    }
+}
+
+/// Detect the forge type from git config and remote URL.
+///
+/// Priority:
+/// 1. Explicit `spr.forgeType` config key
+/// 2. Legacy `spr.githubRepository` key implies GitHub
+/// 3. Remote URL hostname matching (via `url::Url` parser)
+pub fn detect_forge_type(
+    git_config: &git2::Config,
+    repo: &git2::Repository,
+) -> Result<ForgeType> {
+    // 1. Explicit config
+    if let Ok(forge_type_str) = git_config.get_string("spr.forgeType") {
+        return forge_type_str.parse();
+    }
+
+    // 2. Legacy key inference
+    if git_config.get_string("spr.githubRepository").is_ok() {
+        return Ok(ForgeType::GitHub);
+    }
+
+    // 3. URL inference from git remote origin
+    if let Ok(remote) = repo.find_remote("origin")
+        && let Some(url) = remote.url()
+    {
+        return infer_forge_from_url(url);
+    }
+
+    Err(color_eyre::eyre::eyre!(
+        "Cannot determine forge type. Set 'spr.forgeType' in git config \
+         (e.g., git config spr.forgeType github)"
+    ))
+}
+
+fn infer_forge_from_url(value: &str) -> Result<ForgeType> {
+    // Normalize git SSH URLs (git@host:path) to parseable form
+    let normalized = if let Some(rest) = value.strip_prefix("git@") {
+        format!("ssh://{}", rest.replacen(':', "/", 1))
+    } else {
+        value.to_owned()
+    };
+
+    let parsed = url::Url::parse(&normalized).map_err(|e| {
+        color_eyre::eyre::eyre!(
+            "Cannot parse remote URL '{value}': {e}. \
+             Set 'spr.forgeType' in git config."
+        )
+    })?;
+
+    match parsed.host_str() {
+        Some("github.com") => Ok(ForgeType::GitHub),
+        Some(host) => Err(color_eyre::eyre::eyre!(
+            "Unknown forge host '{host}'. Set 'spr.forgeType' in git config \
+             (e.g., git config spr.forgeType github)"
+        )),
+        None => Err(color_eyre::eyre::eyre!(
+            "Remote URL '{value}' has no hostname. \
+             Set 'spr.forgeType' in git config."
+        )),
+    }
+}
+
+/// Construct a forge instance for the given type.
+///
+/// Handles token resolution and all forge-specific initialization
+/// (e.g., octocrab for GitHub). Returns a ready-to-use boxed forge.
+pub fn create_forge(
+    forge_type: ForgeType,
+    config: crate::config::Config,
+    git: Git,
+    git_config: &git2::Config,
+    cli_auth_token: Option<String>,
+) -> Result<Box<dyn ForgeApi>> {
+    match forge_type {
+        ForgeType::GitHub => {
+            let auth_token = resolve_github_token(git_config, cli_auth_token)?;
+            let gh = crate::github::GitHub::new(config, git, auth_token);
+            Ok(Box::new(gh))
+        }
+    }
+}
+
+fn resolve_github_token(
+    git_config: &git2::Config,
+    cli_auth_token: Option<String>,
+) -> Result<secrecy::SecretString> {
+    use crate::token::ForgeTokenResolver as _;
+
+    if let Some(v) = cli_auth_token {
+        return Ok(secrecy::SecretString::from(v));
+    }
+
+    let auth_token_config = if let Ok(v) = git_config.get_string("spr.authToken") {
+        Some(v)
+    } else if let Ok(v) = git_config.get_string("spr.githubAuthToken") {
+        eprintln!(
+            "warning: config key 'spr.githubAuthToken' is deprecated, \
+             use 'spr.authToken' instead"
+        );
+        Some(v)
+    } else {
+        None
+    };
+
+    let resolver = crate::token::GitHubTokenResolver::new(
+        "github.com".into(),
+        auth_token_config,
+    );
+    resolver.resolve()?.ok_or_else(|| {
+        color_eyre::eyre::eyre!(crate::error::SprError::Auth(
+            "No GitHub auth token found. Set GITHUB_TOKEN, run 'gh auth login', \
+             or run 'spr init' to configure one."
+                .into(),
+        ))
+    })
+}
+
 /// Review status for a change request reviewer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReviewStatus {
@@ -290,6 +434,57 @@ mod tests {
         let rr = ReviewerRequest::default();
         assert!(rr.users.is_empty());
         assert!(rr.teams.is_empty());
+    }
+
+    #[test]
+    fn forge_type_from_str() {
+        assert_eq!("github".parse::<ForgeType>().unwrap(), ForgeType::GitHub);
+        assert_eq!("GitHub".parse::<ForgeType>().unwrap(), ForgeType::GitHub);
+        assert_eq!("GITHUB".parse::<ForgeType>().unwrap(), ForgeType::GitHub);
+        assert!("unknown".parse::<ForgeType>().is_err());
+    }
+
+    #[test]
+    fn forge_type_display() {
+        assert_eq!(ForgeType::GitHub.to_string(), "github");
+    }
+
+    #[test]
+    fn infer_forge_github_https() {
+        let ft =
+            super::infer_forge_from_url("https://github.com/owner/repo.git")
+                .unwrap();
+        assert_eq!(ft, ForgeType::GitHub);
+    }
+
+    #[test]
+    fn infer_forge_github_ssh() {
+        let ft =
+            super::infer_forge_from_url("git@github.com:owner/repo.git")
+                .unwrap();
+        assert_eq!(ft, ForgeType::GitHub);
+    }
+
+    #[test]
+    fn infer_forge_unknown_host() {
+        assert!(super::infer_forge_from_url(
+            "https://gitlab.com/owner/repo"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn infer_forge_bare_slug_errors() {
+        assert!(super::infer_forge_from_url("owner/repo").is_err());
+    }
+
+    #[test]
+    fn infer_forge_authority_confusion() {
+        // github.com as userinfo, not hostname — must NOT match
+        assert!(super::infer_forge_from_url(
+            "https://github.com@evil.example/path"
+        )
+        .is_err());
     }
 
     #[test]
