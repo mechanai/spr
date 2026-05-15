@@ -16,8 +16,11 @@ use crate::{
     },
 };
 use async_trait::async_trait;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
+
+static OCTOCRAB_INIT: OnceLock<()> = OnceLock::new();
 
 use crate::forge::{
     ChangeRequest, ChangeRequestState, ChangeRequestUpdate, ForgeApi,
@@ -58,6 +61,15 @@ impl GitHub {
         git: crate::git::Git,
         auth_token: SecretString,
     ) -> Self {
+        OCTOCRAB_INIT.get_or_init(|| {
+            octocrab::initialise(
+                octocrab::Octocrab::builder()
+                    .personal_token(auth_token.expose_secret().to_owned())
+                    .build()
+                    .expect("Failed to build octocrab client"),
+            );
+        });
+
         let git_remote = GitRemote::new(
             git.repo().clone(),
             format!(

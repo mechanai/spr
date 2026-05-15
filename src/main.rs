@@ -22,7 +22,7 @@
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::{Error, Result, eyre};
 use log::debug;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use spr::commands;
 use spr::error::SprError;
 use spr::token::ForgeTokenResolver as _;
@@ -303,12 +303,6 @@ pub async fn spr() -> Result<()> {
     debug!("config: {config:?}");
 
     let git = spr::git::Git::new(repo);
-
-    octocrab::initialise(
-        octocrab::Octocrab::builder()
-            .personal_token(github_auth_token.expose_secret().to_owned())
-            .build()?,
-    );
 
     let gh = spr::github::GitHub::new(
         config.clone(),
