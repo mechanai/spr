@@ -21,19 +21,19 @@ use crate::message::MessageSectionsMap;
 use crate::output::output;
 
 /// A [`ForgeApi`] decorator that logs each action before delegating.
-pub struct VerboseForge<T> {
-    inner: T,
+pub struct VerboseForge {
+    inner: Box<dyn ForgeApi>,
 }
 
-impl<T: ForgeApi> VerboseForge<T> {
+impl VerboseForge {
     #[must_use]
-    pub fn new(inner: T) -> Self {
+    pub fn new(inner: Box<dyn ForgeApi>) -> Self {
         Self { inner }
     }
 }
 
 #[async_trait(?Send)]
-impl<T: ForgeApi> ForgeApi for VerboseForge<T> {
+impl ForgeApi for VerboseForge {
     async fn create_change_request(
         &self,
         message: &MessageSectionsMap,

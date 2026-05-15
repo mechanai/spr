@@ -312,7 +312,7 @@ pub async fn spr() -> Result<()> {
     let forge: Box<dyn spr::forge::ForgeApi> = if dry_run {
         Box::new(spr::forge::DryRunForge::new(Box::new(gh), verbose))
     } else if verbose {
-        Box::new(spr::forge::VerboseForge::new(gh))
+        Box::new(spr::forge::VerboseForge::new(Box::new(gh)))
     } else {
         Box::new(gh)
     };
