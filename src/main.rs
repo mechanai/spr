@@ -22,10 +22,8 @@
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::{Error, Result, eyre};
 use log::debug;
-use secrecy::{ExposeSecret as _, SecretString};
 use spr::commands;
 use spr::error::SprError;
-use spr::token::ForgeTokenResolver as _;
 
 #[derive(Parser, Debug)]
 #[clap(
@@ -161,6 +159,8 @@ pub async fn spr() -> Result<()> {
 
     let git_config = repo.config()?;
 
+    let forge_type = spr::forge::detect_forge_type(&git_config, &repo)?;
+
     let github_repository = match cli.github_repository {
         Some(v) => v,
         None => {
@@ -242,30 +242,6 @@ pub async fn spr() -> Result<()> {
         .ok()
         .unwrap_or(false);
 
-    let github_auth_token: SecretString = if let Some(v) = cli.github_auth_token {
-        SecretString::from(v)
-    } else {
-        let auth_token_config = if let Ok(v) = git_config.get_string("spr.authToken") {
-            Some(v)
-        } else if let Ok(v) = git_config.get_string("spr.githubAuthToken") {
-            eprintln!(
-                "warning: config key 'spr.githubAuthToken' is deprecated, \
-                 use 'spr.authToken' instead"
-            );
-            Some(v)
-        } else {
-            None
-        };
-        let resolver = spr::token::GitHubTokenResolver::new(
-            "github.com".into(),
-            auth_token_config,
-        );
-        resolver.resolve()?.ok_or_else(|| eyre!(SprError::Auth(
-            "No GitHub auth token found. Set GITHUB_TOKEN, run 'gh auth login', \
-             or run 'spr init' to configure one.".into()
-        )))?
-    };
-
     let non_interactive = cli.non_interactive
         || std::env::var("SPR_NON_INTERACTIVE")
             .ok()
@@ -304,23 +280,19 @@ pub async fn spr() -> Result<()> {
 
     let git = spr::git::Git::new(repo);
 
-    octocrab::initialise(
-        octocrab::Octocrab::builder()
-            .personal_token(github_auth_token.expose_secret().to_owned())
-            .build()?,
-    );
-
-    let gh = spr::github::GitHub::new(
+    let forge = spr::forge::create_forge(
+        forge_type,
         config.clone(),
         git.clone(),
-        github_auth_token,
-    );
+        &git_config,
+        cli.github_auth_token,
+    )?;
     let forge: Box<dyn spr::forge::ForgeApi> = if dry_run {
-        Box::new(spr::forge::DryRunForge::new(Box::new(gh), verbose))
+        Box::new(spr::forge::DryRunForge::new(forge, verbose))
     } else if verbose {
-        Box::new(spr::forge::VerboseForge::new(gh))
+        Box::new(spr::forge::VerboseForge::new(forge))
     } else {
-        Box::new(gh)
+        forge
     };
 
     match cli.command {
