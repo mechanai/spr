@@ -16,6 +16,7 @@ use crate::{
     },
 };
 use async_trait::async_trait;
+use secrecy::SecretString;
 use std::collections::{HashMap, HashSet};
 
 use crate::forge::{
@@ -27,7 +28,6 @@ use crate::forge::{
 #[allow(clippy::upper_case_acronyms)]
 type URI = String;
 
-#[derive(Clone)]
 pub struct GitHub {
     config: crate::config::Config,
     git: crate::git::Git,
@@ -56,7 +56,7 @@ impl GitHub {
     pub fn new(
         config: crate::config::Config,
         git: crate::git::Git,
-        auth_token: String,
+        auth_token: SecretString,
     ) -> Self {
         let git_remote = GitRemote::new(
             git.repo().clone(),

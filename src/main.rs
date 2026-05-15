@@ -22,8 +22,10 @@
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::{Error, Result, eyre};
 use log::debug;
+use secrecy::{ExposeSecret as _, SecretString};
 use spr::commands;
 use spr::error::SprError;
+use spr::token::ForgeTokenResolver as _;
 
 #[derive(Parser, Debug)]
 #[clap(
@@ -215,14 +217,17 @@ pub async fn spr() -> Result<()> {
         .ok()
         .unwrap_or(false);
 
-    let github_auth_token = match cli.github_auth_token {
-        Some(v) => v,
-        None => spr::token::find_token("github.com")
-            .or_else(|| git_config.get_string("spr.githubAuthToken").ok())
-            .ok_or_else(|| eyre!(SprError::Auth(
-                "No GitHub auth token found. Set GITHUB_TOKEN, run 'gh auth login', \
-                 or run 'spr init' to configure one.".into()
-            )))?,
+    let github_auth_token: SecretString = if let Some(v) = cli.github_auth_token {
+        SecretString::from(v)
+    } else {
+        let resolver = spr::token::GitHubTokenResolver::new(
+            "github.com".into(),
+            git_config.get_string("spr.githubAuthToken").ok(),
+        );
+        resolver.resolve()?.ok_or_else(|| eyre!(SprError::Auth(
+            "No GitHub auth token found. Set GITHUB_TOKEN, run 'gh auth login', \
+             or run 'spr init' to configure one.".into()
+        )))?
     };
 
     let non_interactive = cli.non_interactive
@@ -265,7 +270,7 @@ pub async fn spr() -> Result<()> {
 
     octocrab::initialise(
         octocrab::Octocrab::builder()
-            .personal_token(github_auth_token.clone())
+            .personal_token(github_auth_token.expose_secret().to_owned())
             .build()?,
     );
 

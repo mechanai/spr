@@ -6,12 +6,12 @@ use std::{
 use color_eyre::eyre::{Result, WrapErr, eyre};
 use git2::{Oid, PushOptions, RemoteCallbacks};
 use log::{debug, trace, warn};
+use secrecy::{ExposeSecret as _, SecretString};
 
-#[derive(Clone)]
 pub struct GitRemote {
     repo: std::sync::Arc<git2::Repository>,
     url: String,
-    auth_token: String,
+    auth_token: SecretString,
 }
 
 impl GitRemote {
@@ -19,7 +19,7 @@ impl GitRemote {
     pub fn new(
         repo: std::sync::Arc<git2::Repository>,
         url: String,
-        auth_token: String,
+        auth_token: SecretString,
     ) -> Self {
         Self {
             repo,
@@ -35,7 +35,7 @@ impl GitRemote {
         let mut remote = self.repo.remote_anonymous(&self.url)?;
         let mut cb = git2::RemoteCallbacks::new();
         cb.credentials(move |_url, _username, _allowed_types| {
-            git2::Cred::userpass_plaintext("spr", &self.auth_token)
+            git2::Cred::userpass_plaintext("spr", self.auth_token.expose_secret())
         });
         let mut connection =
             remote.connect_auth(dir, Some(cb), None).wrap_err_with(|| {

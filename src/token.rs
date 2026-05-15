@@ -58,11 +58,11 @@ impl ForgeTokenResolver for GitHubTokenResolver {
         }
 
         // 3. Git config fallback
-        if let Some(ref value) = self.git_config_value {
-            if !value.is_empty() {
-                debug!("Using token from git config");
-                return Ok(Some(SecretString::from(value.clone())));
-            }
+        if let Some(ref value) = self.git_config_value
+            && !value.is_empty()
+        {
+            debug!("Using token from git config");
+            return Ok(Some(SecretString::from(value.clone())));
         }
 
         Ok(None)
@@ -106,19 +106,6 @@ fn from_gh_cli(host: &str) -> Option<SecretString> {
 
     debug!("Using token from gh CLI for host {host}");
     Some(SecretString::from(token))
-}
-
-/// Backward-compatible wrapper — will be removed when main.rs is updated.
-#[deprecated(note = "Use GitHubTokenResolver instead")]
-#[must_use]
-pub fn find_token(github_host: &str) -> Option<String> {
-    use secrecy::ExposeSecret as _;
-    let resolver = GitHubTokenResolver::new(github_host.to_owned(), None);
-    resolver
-        .resolve()
-        .ok()
-        .flatten()
-        .map(|s| s.expose_secret().to_owned())
 }
 
 #[cfg(test)]
