@@ -14,7 +14,7 @@ use git2::Oid;
 use crate::config::MergeMethod;
 use crate::forge::{
     ChangeRequest, ChangeRequestUpdate, ForgeApi, Mergeability,
-    ReviewerRequest, TeamInfo, UserInfo,
+    OpenChangeRequestSummary, ReviewerRequest, TeamInfo, UserInfo,
 };
 use crate::git_remote::PushSpec;
 use crate::message::MessageSectionsMap;
@@ -148,6 +148,34 @@ impl<T: ForgeApi> ForgeApi for VerboseForge<T> {
         team_slug: &str,
     ) -> Result<Option<TeamInfo>> {
         self.inner.get_team(org, team_slug).await
+    }
+
+    async fn list_open_change_requests(
+        &self,
+    ) -> Result<Vec<OpenChangeRequestSummary>> {
+        let term = self.inner.change_request_term();
+        let _ = output(
+            "\u{1f50d}",
+            &format!("Listing open {term}s for current user"),
+        );
+        self.inner.list_open_change_requests().await
+    }
+
+    async fn get_authenticated_user(&self) -> Result<UserInfo> {
+        let _ = output("\u{1f464}", "Fetching authenticated user");
+        self.inner.get_authenticated_user().await
+    }
+
+    async fn get_repo_default_branch(
+        &self,
+        owner: &str,
+        repo: &str,
+    ) -> Result<String> {
+        let _ = output(
+            "\u{1f33f}",
+            &format!("Fetching default branch for {owner}/{repo}"),
+        );
+        self.inner.get_repo_default_branch(owner, repo).await
     }
 
     fn push_to_remote(&self, refs: &[PushSpec<'_>]) -> Result<()> {

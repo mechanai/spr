@@ -20,8 +20,12 @@ use std::collections::{HashMap, HashSet};
 
 use crate::forge::{
     ChangeRequest, ChangeRequestState, ChangeRequestUpdate, ForgeApi,
-    Mergeability, ReviewStatus, ReviewerRequest, TeamInfo, UserInfo,
+    Mergeability, OpenChangeRequestSummary, ReviewStatus, ReviewerRequest,
+    TeamInfo, UserInfo,
 };
+
+#[allow(clippy::upper_case_acronyms)]
+type URI = String;
 
 #[derive(Clone)]
 pub struct GitHub {
@@ -447,6 +451,108 @@ impl GitHub {
         }
     }
 
+    async fn list_open_change_requests_impl(
+        &self,
+    ) -> Result<Vec<OpenChangeRequestSummary>> {
+        #[derive(graphql_client::GraphQLQuery)]
+        #[graphql(
+            schema_path = "src/gql/schema.docs.graphql",
+            query_path = "src/gql/open_reviews.graphql",
+            response_derives = "Debug"
+        )]
+        struct SearchQuery;
+
+        let variables = search_query::Variables {
+            query: format!(
+                "repo:{}/{} is:open is:pr author:@me archived:false",
+                self.config.owner, self.config.repo
+            ),
+        };
+        let request_body = SearchQuery::build_query(variables);
+        let response: graphql_client::Response<search_query::ResponseData> =
+            octocrab::instance()
+                .post("/graphql", Some(&request_body))
+                .await
+                .wrap_err("Searching for open change requests")?;
+
+        let mut summaries = Vec::new();
+        if let Some(data) = response.data
+            && let Some(nodes) = data.search.nodes
+        {
+            for node in nodes.into_iter().flatten() {
+                if let search_query::SearchQuerySearchNodes::PullRequest(
+                    pr,
+                ) = node
+                {
+                    let review_status = match pr.review_decision {
+                        Some(
+                            search_query::PullRequestReviewDecision::APPROVED,
+                        ) => Some(crate::forge::ReviewStatus::Approved),
+                        Some(
+                            search_query::PullRequestReviewDecision::CHANGES_REQUESTED,
+                        ) => Some(crate::forge::ReviewStatus::Rejected),
+                        Some(
+                            search_query::PullRequestReviewDecision::REVIEW_REQUIRED,
+                        ) => Some(crate::forge::ReviewStatus::Requested),
+                        _ => None,
+                    };
+                    summaries.push(OpenChangeRequestSummary {
+                        number: pr.number.cast_unsigned(),
+                        title: pr.title,
+                        url: pr.url,
+                        review_status,
+                    });
+                }
+            }
+        }
+        Ok(summaries)
+    }
+
+    /// Fetch the currently authenticated user.
+    ///
+    /// Note: `is_collaborator` is not checked here — the `/user` endpoint
+    /// doesn't reveal collaborator status for a specific repo. Callers
+    /// needing that should use a separate collaborator check.
+    async fn get_authenticated_user_impl(&self) -> Result<UserInfo> {
+        let user = octocrab::instance().current().user().await
+            .wrap_err("Fetching authenticated user")?;
+        Ok(UserInfo {
+            login: user.login,
+            name: user.name,
+            is_collaborator: false,
+        })
+    }
+
+    async fn get_repo_default_branch_impl(
+        &self,
+        owner: &str,
+        repo: &str,
+    ) -> Result<String> {
+        fn is_valid_slug(s: &str) -> bool {
+            !s.is_empty()
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '_')
+        }
+        if !is_valid_slug(owner) || !is_valid_slug(repo) {
+            return Err(eyre!(
+                "Invalid owner/repo: {owner}/{repo}"
+            ));
+        }
+
+        let repo_info = octocrab::instance()
+            .get::<octocrab::models::Repository, _, _>(
+                format!("/repos/{owner}/{repo}"),
+                None::<&()>,
+            )
+            .await
+            .wrap_err(format!(
+                "Fetching repository info for {owner}/{repo}"
+            ))?;
+        Ok(repo_info
+            .default_branch
+            .unwrap_or_else(|| "main".to_owned()))
+    }
+
 }
 
 /// Serialization wrapper for GitHub PATCH /pulls/{number} endpoint.
@@ -625,6 +731,24 @@ impl ForgeApi for GitHub {
                 Err(e)
             }
         }
+    }
+
+    async fn list_open_change_requests(
+        &self,
+    ) -> Result<Vec<OpenChangeRequestSummary>> {
+        self.list_open_change_requests_impl().await
+    }
+
+    async fn get_authenticated_user(&self) -> Result<UserInfo> {
+        self.get_authenticated_user_impl().await
+    }
+
+    async fn get_repo_default_branch(
+        &self,
+        owner: &str,
+        repo: &str,
+    ) -> Result<String> {
+        self.get_repo_default_branch_impl(owner, repo).await
     }
 
     fn push_to_remote(

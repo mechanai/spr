@@ -173,6 +173,21 @@ pub trait ForgeApi {
         team_slug: &str,
     ) -> Result<Option<TeamInfo>>;
 
+    // Listing and bootstrapping
+    //
+    // `list_open_change_requests` operates on the configured repo (implicit).
+    // `get_authenticated_user` and `get_repo_default_branch` take explicit
+    // params because they are used during `init`, before config exists.
+    async fn list_open_change_requests(
+        &self,
+    ) -> Result<Vec<OpenChangeRequestSummary>>;
+    async fn get_authenticated_user(&self) -> Result<UserInfo>;
+    async fn get_repo_default_branch(
+        &self,
+        owner: &str,
+        repo: &str,
+    ) -> Result<String>;
+
     // Git remote operations
     fn push_to_remote(&self, refs: &[PushSpec<'_>]) -> Result<()>;
     fn fetch_from_remote(
@@ -211,6 +226,15 @@ pub struct UserInfo {
 pub struct TeamInfo {
     pub slug: String,
     pub name: String,
+}
+
+/// Summary of an open change request for listing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OpenChangeRequestSummary {
+    pub number: u64,
+    pub title: String,
+    pub url: String,
+    pub review_status: Option<ReviewStatus>,
 }
 
 /// Prepare commits for stacking — local git only, no network I/O.
