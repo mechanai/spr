@@ -34,7 +34,7 @@ impl DryRunForge {
     #[must_use]
     pub fn new(inner: Box<dyn ForgeApi>, verbose: bool) -> Self {
         let cr_term = inner.change_request_term().to_owned();
-        let cr_term_full = inner.change_request_term_full().to_string();
+        let cr_term_full = inner.change_request_term_full().to_owned();
         Self {
             inner: Some(inner),
             verbose,
@@ -286,6 +286,30 @@ impl ForgeApi for DryRunForge {
 
     fn change_request_term_full(&self) -> &str {
         &self.cr_term_full
+    }
+
+    fn change_request_url(&self, number: u64) -> String {
+        if let Some(inner) = &self.inner {
+            inner.change_request_url(number)
+        } else {
+            format!("https://example.com/pull/{number}")
+        }
+    }
+
+    fn short_cr_ref(&self, number: u64) -> String {
+        if let Some(inner) = &self.inner {
+            inner.short_cr_ref(number)
+        } else {
+            format!("dry-run#{number}")
+        }
+    }
+
+    fn parse_cr_field(&self, text: &str) -> Result<Option<u64>> {
+        if let Some(inner) = &self.inner {
+            inner.parse_cr_field(text)
+        } else {
+            Ok(None)
+        }
     }
 
     fn is_dry_run(&self) -> bool {

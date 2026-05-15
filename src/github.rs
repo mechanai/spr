@@ -16,6 +16,7 @@ use crate::{
     },
 };
 use async_trait::async_trait;
+use secrecy::SecretString;
 use std::collections::{HashMap, HashSet};
 
 use crate::forge::{
@@ -27,7 +28,6 @@ use crate::forge::{
 #[allow(clippy::upper_case_acronyms)]
 type URI = String;
 
-#[derive(Clone)]
 pub struct GitHub {
     config: crate::config::Config,
     git: crate::git::Git,
@@ -56,7 +56,7 @@ impl GitHub {
     pub fn new(
         config: crate::config::Config,
         git: crate::git::Git,
-        auth_token: String,
+        auth_token: SecretString,
     ) -> Self {
         let git_remote = GitRemote::new(
             git.repo().clone(),
@@ -82,7 +82,7 @@ impl GitHub {
         let default_branch_oid = self
             .git_remote
             .fetch_branch(self.config.default_branch_name())?;
-        self.git.get_prepared_commits(&self.config, default_branch_oid)
+        self.git.get_prepared_commits(self, default_branch_oid)
     }
 
     pub async fn fetch_user(&self, login: &str) -> Result<UserInfo> {
@@ -150,8 +150,8 @@ impl GitHub {
             .pull_request
             .ok_or_else(|| eyre!("failed to find PR"))?;
 
-        let base = self.config.new_github_branch_from_ref(&pr.base_ref_name)?;
-        let head = self.config.new_github_branch_from_ref(&pr.head_ref_name)?;
+        let base = self.config.new_branch_from_ref(&pr.base_ref_name)?;
+        let head = self.config.new_branch_from_ref(&pr.head_ref_name)?;
 
         let branch_names: Vec<_> =
             [&base, &head].iter().map(|&b| b.branch_name()).collect();
@@ -163,10 +163,10 @@ impl GitHub {
         };
 
         let base_oid = base_oid.ok_or_else(|| {
-            eyre!("{} not found on GitHub", &base.ref_on_github)
+            eyre!("{} not found on GitHub", base.full_ref())
         })?;
         let head_oid = head_oid.ok_or_else(|| {
-            eyre!("{} not found on GitHub", &head.ref_on_github)
+            eyre!("{} not found on GitHub", head.full_ref())
         })?;
 
         let mut sections = parse_message(&pr.body, MessageSection::Summary);
@@ -183,7 +183,7 @@ impl GitHub {
 
         sections.insert(
             MessageSection::PullRequest,
-            self.config.pull_request_url(number),
+            self.change_request_url(number),
         );
 
         let reviewers: HashMap<String, ReviewStatus> = pr
@@ -387,7 +387,7 @@ impl GitHub {
             .pull_request
             .ok_or_else(|| eyre!("failed to find PR"))?;
 
-        let base = self.config.new_github_branch_from_ref(&pr.base_ref_name)?;
+        let base = self.config.new_branch_from_ref(&pr.base_ref_name)?;
 
         Ok(Mergeability {
             base_ref_name: base.branch_name().to_owned(),
@@ -791,61 +791,42 @@ impl ForgeApi for GitHub {
     fn change_request_term_full(&self) -> &'static str {
         "Pull Request"
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct GitHubBranch {
-    ref_on_github: String,
-    is_default_branch: bool,
-}
-
-impl GitHubBranch {
-    pub fn new_from_ref(ghref: &str, default_branch_name: &str) -> Result<Self> {
-        let ref_on_github = if ghref.starts_with("refs/heads/") {
-            ghref.to_string()
-        } else if ghref.starts_with("refs/") {
-            return Err(eyre!("Ref '{ghref}' does not refer to a branch"));
-        } else {
-            format!("refs/heads/{ghref}")
-        };
-
-        // The branch name is `ref_on_github` with the `refs/heads/` prefix
-        // (length 11) removed
-        let branch_name = &ref_on_github[11..];
-        let is_default_branch = branch_name == default_branch_name;
-
-        Ok(Self {
-            ref_on_github,
-            is_default_branch,
-        })
+    fn change_request_url(&self, number: u64) -> String {
+        format!(
+            "https://github.com/{}/{}/pull/{}",
+            self.config.owner, self.config.repo, number
+        )
     }
 
-    #[must_use]
-    pub fn new_from_branch_name(
-        branch_name: &str,
-        default_branch_name: &str,
-    ) -> Self {
-        Self {
-            ref_on_github: format!("refs/heads/{branch_name}"),
-            is_default_branch: branch_name == default_branch_name,
+    fn short_cr_ref(&self, number: u64) -> String {
+        format!("{}/{}#{}", self.config.owner, self.config.repo, number)
+    }
+
+    fn parse_cr_field(&self, text: &str) -> Result<Option<u64>> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(None);
         }
-    }
 
-    #[must_use]
-    pub fn on_github(&self) -> &str {
-        &self.ref_on_github
-    }
+        // GitHub URL pattern
+        let url_regex = lazy_regex::regex!(
+            r#"^https?://github\.com/([\w\-\.]+)/([\w\-\.]+)/pull/(\d+)([/?#].*)?$"#
+        );
+        if let Some(caps) = url_regex.captures(text)
+            && self.config.owner == caps.get(1).unwrap().as_str()
+            && self.config.repo == caps.get(2).unwrap().as_str()
+        {
+            return Ok(Some(caps.get(3).unwrap().as_str().parse()?));
+        }
 
-    #[must_use]
-    pub fn is_default_branch(&self) -> bool {
-        self.is_default_branch
-    }
+        // Bare #NNN or NNN
+        let bare_regex = lazy_regex::regex!(r#"^#?\s*(\d+)$"#);
+        if let Some(caps) = bare_regex.captures(text) {
+            return Ok(Some(caps.get(1).unwrap().as_str().parse()?));
+        }
 
-    #[must_use]
-    pub fn branch_name(&self) -> &str {
-        // The branch name is `ref_on_github` with the `refs/heads/` prefix
-        // (length 11) removed
-        &self.ref_on_github[11..]
+        Ok(None)
     }
 }
 
@@ -862,83 +843,68 @@ fn is_not_found(err: &octocrab::Error) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use color_eyre::eyre::Result;
 
-    #[test]
-    fn test_new_from_ref_with_branch_name() {
-        let r = GitHubBranch::new_from_ref("foo", "masterbranch").unwrap();
-        assert_eq!(r.on_github(), "refs/heads/foo");
-        assert_eq!(r.branch_name(), "foo");
-        assert!(!r.is_default_branch());
-    }
-
-    #[test]
-    fn test_new_from_ref_with_default_branch_name() {
-        let r =
-            GitHubBranch::new_from_ref("masterbranch", "masterbranch").unwrap();
-        assert_eq!(r.on_github(), "refs/heads/masterbranch");
-        assert_eq!(r.branch_name(), "masterbranch");
-        assert!(r.is_default_branch());
-    }
-
-    #[test]
-    fn test_new_from_ref_with_ref_name() {
-        let r = GitHubBranch::new_from_ref("refs/heads/foo", "masterbranch")
-            .unwrap();
-        assert_eq!(r.on_github(), "refs/heads/foo");
-        assert_eq!(r.branch_name(), "foo");
-        assert!(!r.is_default_branch());
-    }
-
-    #[test]
-    fn test_new_from_ref_with_default_branch_ref_name() {
-        let r = GitHubBranch::new_from_ref(
-            "refs/heads/masterbranch",
-            "masterbranch",
-        )
-        .unwrap();
-        assert_eq!(r.on_github(), "refs/heads/masterbranch");
-        assert_eq!(r.branch_name(), "masterbranch");
-        assert!(r.is_default_branch());
-    }
-
-    #[test]
-    fn test_new_from_branch_name() {
-        let r = GitHubBranch::new_from_branch_name("foo", "masterbranch");
-        assert_eq!(r.on_github(), "refs/heads/foo");
-        assert_eq!(r.branch_name(), "foo");
-        assert!(!r.is_default_branch());
-    }
-
-    #[test]
-    fn test_new_from_default_branch_name() {
-        let r =
-            GitHubBranch::new_from_branch_name("masterbranch", "masterbranch");
-        assert_eq!(r.on_github(), "refs/heads/masterbranch");
-        assert_eq!(r.branch_name(), "masterbranch");
-        assert!(r.is_default_branch());
-    }
-
-    #[test]
-    fn test_new_from_ref_with_edge_case_ref_name() {
-        let r = GitHubBranch::new_from_ref(
-            "refs/heads/refs/heads/foo",
-            "masterbranch",
-        )
-        .unwrap();
-        assert_eq!(r.on_github(), "refs/heads/refs/heads/foo");
-        assert_eq!(r.branch_name(), "refs/heads/foo");
-        assert!(!r.is_default_branch());
-    }
-
-    #[test]
-    fn test_new_from_edge_case_branch_name() {
-        let r = GitHubBranch::new_from_branch_name(
-            "refs/heads/foo",
-            "masterbranch",
+    fn parse_cr_field_test_helper(owner: &str, repo: &str, text: &str) -> Result<Option<u64>> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(None);
+        }
+        let url_regex = lazy_regex::regex!(
+            r#"^https?://github\.com/([\w\-\.]+)/([\w\-\.]+)/pull/(\d+)([/?#].*)?$"#
         );
-        assert_eq!(r.on_github(), "refs/heads/refs/heads/foo");
-        assert_eq!(r.branch_name(), "refs/heads/foo");
-        assert!(!r.is_default_branch());
+        if let Some(caps) = url_regex.captures(text)
+            && owner == caps.get(1).unwrap().as_str()
+            && repo == caps.get(2).unwrap().as_str()
+        {
+            return Ok(Some(caps.get(3).unwrap().as_str().parse()?));
+        }
+        let bare_regex = lazy_regex::regex!(r#"^#?\s*(\d+)$"#);
+        if let Some(caps) = bare_regex.captures(text) {
+            return Ok(Some(caps.get(1).unwrap().as_str().parse()?));
+        }
+        Ok(None)
+    }
+
+    #[test]
+    fn test_parse_cr_field_empty() {
+        assert_eq!(parse_cr_field_test_helper("acme", "codez", "").unwrap(), None);
+        assert_eq!(parse_cr_field_test_helper("acme", "codez", "   ").unwrap(), None);
+    }
+
+    #[test]
+    fn test_parse_cr_field_bare_number() {
+        assert_eq!(parse_cr_field_test_helper("acme", "codez", "123").unwrap(), Some(123));
+        assert_eq!(parse_cr_field_test_helper("acme", "codez", "   123 ").unwrap(), Some(123));
+        assert_eq!(parse_cr_field_test_helper("acme", "codez", "#123").unwrap(), Some(123));
+        assert_eq!(parse_cr_field_test_helper("acme", "codez", " # 123").unwrap(), Some(123));
+    }
+
+    #[test]
+    fn test_parse_cr_field_github_url() {
+        assert_eq!(
+            parse_cr_field_test_helper("acme", "codez", "https://github.com/acme/codez/pull/123").unwrap(),
+            Some(123)
+        );
+        assert_eq!(
+            parse_cr_field_test_helper("acme", "codez", "https://github.com/acme/codez/pull/123/").unwrap(),
+            Some(123)
+        );
+        assert_eq!(
+            parse_cr_field_test_helper("acme", "codez", "https://github.com/acme/codez/pull/123?x=a").unwrap(),
+            Some(123)
+        );
+        assert_eq!(
+            parse_cr_field_test_helper("acme", "codez", "https://github.com/acme/codez/pull/123#abc").unwrap(),
+            Some(123)
+        );
+    }
+
+    #[test]
+    fn test_parse_cr_field_wrong_repo() {
+        assert_eq!(
+            parse_cr_field_test_helper("acme", "codez", "https://github.com/other/repo/pull/123").unwrap(),
+            None
+        );
     }
 }

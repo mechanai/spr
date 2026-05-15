@@ -32,7 +32,7 @@ pub async fn close(
 
     let remote_tip = forge.fetch_branch(config.default_branch_name())?;
     let mut prepared_commits =
-        crate::forge::get_prepared_commits(git, config, remote_tip)?;
+        crate::forge::get_prepared_commits(git, forge, remote_tip)?;
 
     if prepared_commits.is_empty() {
         output("👋", "Branch is empty - nothing to do. Good bye!")?;
@@ -219,6 +219,12 @@ mod tests {
             ForgeApiMock::fetch_branch
                 .some_call(matching!(_))
                 .returns(Ok(test_repo.base_oid)),
+            ForgeApiMock::parse_cr_field
+                .some_call(matching!(_))
+                .returns(Ok(Some(10))),
+            ForgeApiMock::change_request_url
+                .some_call(matching!(10))
+                .returns("https://github.com/test-owner/test-repo/pull/10".to_string()),
             ForgeApiMock::get_change_request
                 .some_call(matching!(_))
                 .returns(Ok(Some(cr))),
@@ -251,6 +257,12 @@ mod tests {
             ForgeApiMock::fetch_branch
                 .some_call(matching!(_))
                 .returns(Ok(test_repo.base_oid)),
+            ForgeApiMock::parse_cr_field
+                .some_call(matching!(_))
+                .returns(Ok(Some(10))),
+            ForgeApiMock::change_request_url
+                .some_call(matching!(10))
+                .returns("https://github.com/test-owner/test-repo/pull/10".to_string()),
             ForgeApiMock::get_change_request
                 .some_call(matching!(_))
                 .returns(Ok(Some(cr))),
@@ -285,6 +297,12 @@ mod tests {
             ForgeApiMock::fetch_branch
                 .some_call(matching!(_))
                 .returns(Ok(test_repo.base_oid)),
+            ForgeApiMock::parse_cr_field
+                .some_call(matching!(_))
+                .returns(Ok(Some(10))),
+            ForgeApiMock::change_request_url
+                .some_call(matching!(10))
+                .returns("https://github.com/test-owner/test-repo/pull/10".to_string()),
             ForgeApiMock::get_change_request
                 .some_call(matching!(_))
                 .returns(Ok(Some(cr))),

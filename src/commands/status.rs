@@ -28,7 +28,7 @@ pub async fn status(
 ) -> Result<()> {
     let remote_tip = forge.fetch_branch(config.default_branch_name())?;
     let prepared_commits =
-        crate::forge::get_prepared_commits(git, config, remote_tip)?;
+        crate::forge::get_prepared_commits(git, forge, remote_tip)?;
 
     if prepared_commits.is_empty() {
         return Err(eyre!("No commits on branch"));
@@ -71,7 +71,7 @@ pub async fn status(
             all_ready = false;
         }
 
-        let url = config.pull_request_url(pr_number);
+        let url = forge.change_request_url(pr_number);
 
         output_essential(&format!(
             "#{} | {} | {} | {}",
@@ -166,6 +166,12 @@ mod tests {
 
         let forge = Unimock::new((
             base_clauses(test_repo.base_oid),
+            ForgeApiMock::parse_cr_field
+                .some_call(matching!(_))
+                .returns(Ok(Some(42))),
+            ForgeApiMock::change_request_url
+                .each_call(matching!(42))
+                .returns("https://github.com/test-owner/test-repo/pull/42".to_string()),
             ForgeApiMock::get_change_request
                 .some_call(matching!(_))
                 .returns(Ok(Some(make_cr(
@@ -197,6 +203,12 @@ mod tests {
 
         let forge = Unimock::new((
             base_clauses(test_repo.base_oid),
+            ForgeApiMock::parse_cr_field
+                .some_call(matching!(_))
+                .returns(Ok(Some(42))),
+            ForgeApiMock::change_request_url
+                .each_call(matching!(42))
+                .returns("https://github.com/test-owner/test-repo/pull/42".to_string()),
             ForgeApiMock::get_change_request
                 .some_call(matching!(_))
                 .returns(Ok(Some(make_cr(

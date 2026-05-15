@@ -217,6 +217,18 @@ impl<T: ForgeApi> ForgeApi for VerboseForge<T> {
         self.inner.change_request_term_full()
     }
 
+    fn change_request_url(&self, number: u64) -> String {
+        self.inner.change_request_url(number)
+    }
+
+    fn short_cr_ref(&self, number: u64) -> String {
+        self.inner.short_cr_ref(number)
+    }
+
+    fn parse_cr_field(&self, text: &str) -> Result<Option<u64>> {
+        self.inner.parse_cr_field(text)
+    }
+
     fn is_dry_run(&self) -> bool {
         self.inner.is_dry_run()
     }

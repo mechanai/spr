@@ -28,7 +28,7 @@ pub async fn check(
 
     let remote_tip = forge.fetch_branch(config.default_branch_name())?;
     let prepared_commits =
-        crate::forge::get_prepared_commits(git, config, remote_tip)?;
+        crate::forge::get_prepared_commits(git, forge, remote_tip)?;
 
     let head_commit = prepared_commits
         .last()
@@ -48,11 +48,8 @@ pub async fn check(
 
     // Cherry-pick conflict check
     if opts.cherry_pick {
-        let default_branch_oid = if let Some(first) = prepared_commits.first() {
-            first.parent_oid
-        } else {
-            return Ok(());
-        };
+        // prepared_commits is non-empty (checked above), so first() is safe.
+        let default_branch_oid = prepared_commits.first().unwrap().parent_oid;
 
         let index = git.cherrypick(head_commit.oid, default_branch_oid)?;
         if index.has_conflicts() {
@@ -153,7 +150,7 @@ mod tests {
 
         let opts = CheckOptions { cherry_pick: false };
         let result = check(opts, &git, &forge, &config).await;
-        assert!(result.is_ok(), "check should pass with test plan: {result:?}");
+        assert!(result.is_ok(), "check should pass: {result:?}");
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -165,7 +162,15 @@ mod tests {
         let git = test_repo.git();
         let config = test_config();
 
-        let forge = Unimock::new(base_clauses(test_repo.base_oid));
+        let forge = Unimock::new((
+            base_clauses(test_repo.base_oid),
+            ForgeApiMock::parse_cr_field
+                .some_call(matching!(_))
+                .returns(Ok(Some(99))),
+            ForgeApiMock::change_request_url
+                .some_call(matching!(99))
+                .returns("https://github.com/test-owner/test-repo/pull/99".to_string()),
+        ));
 
         let opts = CheckOptions { cherry_pick: false };
         let result = check(opts, &git, &forge, &config).await;
