@@ -163,20 +163,45 @@ pub async fn spr() -> Result<()> {
 
     let github_repository = match cli.github_repository {
         Some(v) => v,
-        None => git_config.get_string("spr.githubRepository").map_err(|_| {
-            eyre!(SprError::Auth(
-                "spr.githubRepository not configured. Run 'spr init' to set up this repository."
-                    .to_string(),
-            ))
-        })?,
+        None => {
+            if let Ok(v) = git_config.get_string("spr.repository") {
+                v
+            } else if let Ok(v) = git_config.get_string("spr.githubRepository") {
+                eprintln!(
+                    "warning: config key 'spr.githubRepository' is deprecated, \
+                     use 'spr.repository' instead"
+                );
+                v
+            } else {
+                return Err(eyre!(SprError::Auth(
+                    "spr.repository not configured. Run 'spr init' to set up this repository."
+                        .to_string(),
+                )));
+            }
+        }
     };
 
     let github_default_branch = match cli.github_default_branch {
         Some(v) => Ok::<String, git2::Error>(v),
-        None => git_config
-            .get_string("spr.githubDefaultBranch")
-            .or_else(|_| git_config.get_string("spr.githubMasterBranch"))
-            .or_else(|_| Ok("master".to_string())),
+        None => {
+            if let Ok(v) = git_config.get_string("spr.defaultBranch") {
+                Ok(v)
+            } else if let Ok(v) = git_config.get_string("spr.githubDefaultBranch") {
+                eprintln!(
+                    "warning: config key 'spr.githubDefaultBranch' is deprecated, \
+                     use 'spr.defaultBranch' instead"
+                );
+                Ok(v)
+            } else if let Ok(v) = git_config.get_string("spr.githubMasterBranch") {
+                eprintln!(
+                    "warning: config key 'spr.githubMasterBranch' is deprecated, \
+                     use 'spr.defaultBranch' instead"
+                );
+                Ok(v)
+            } else {
+                Ok("master".to_string())
+            }
+        }
     }?;
 
     let branch_prefix = match cli.branch_prefix {
@@ -220,9 +245,20 @@ pub async fn spr() -> Result<()> {
     let github_auth_token: SecretString = if let Some(v) = cli.github_auth_token {
         SecretString::from(v)
     } else {
+        let auth_token_config = if let Ok(v) = git_config.get_string("spr.authToken") {
+            Some(v)
+        } else if let Ok(v) = git_config.get_string("spr.githubAuthToken") {
+            eprintln!(
+                "warning: config key 'spr.githubAuthToken' is deprecated, \
+                 use 'spr.authToken' instead"
+            );
+            Some(v)
+        } else {
+            None
+        };
         let resolver = spr::token::GitHubTokenResolver::new(
             "github.com".into(),
-            git_config.get_string("spr.githubAuthToken").ok(),
+            auth_token_config,
         );
         resolver.resolve()?.ok_or_else(|| eyre!(SprError::Auth(
             "No GitHub auth token found. Set GITHUB_TOKEN, run 'gh auth login', \

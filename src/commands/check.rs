@@ -48,11 +48,8 @@ pub async fn check(
 
     // Cherry-pick conflict check
     if opts.cherry_pick {
-        let default_branch_oid = if let Some(first) = prepared_commits.first() {
-            first.parent_oid
-        } else {
-            return Ok(());
-        };
+        // prepared_commits is non-empty (checked above), so first() is safe.
+        let default_branch_oid = prepared_commits.first().unwrap().parent_oid;
 
         let index = git.cherrypick(head_commit.oid, default_branch_oid)?;
         if index.has_conflicts() {

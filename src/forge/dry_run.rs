@@ -34,7 +34,7 @@ impl DryRunForge {
     #[must_use]
     pub fn new(inner: Box<dyn ForgeApi>, verbose: bool) -> Self {
         let cr_term = inner.change_request_term().to_owned();
-        let cr_term_full = inner.change_request_term_full().to_string();
+        let cr_term_full = inner.change_request_term_full().to_owned();
         Self {
             inner: Some(inner),
             verbose,
