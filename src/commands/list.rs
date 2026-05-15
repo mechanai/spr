@@ -5,59 +5,23 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-use color_eyre::eyre::{Result, WrapErr as _, eyre};
-use graphql_client::{GraphQLQuery, Response};
+use color_eyre::Result;
 
-#[allow(clippy::upper_case_acronyms)]
-type URI = String;
-#[derive(GraphQLQuery)]
-#[graphql(
-    schema_path = "src/gql/schema.docs.graphql",
-    query_path = "src/gql/open_reviews.graphql",
-    response_derives = "Debug"
-)]
-pub struct SearchQuery;
+use crate::forge::{ForgeApi, ReviewStatus};
 
-pub async fn list(config: &crate::config::Config) -> Result<()> {
-    let variables = search_query::Variables {
-        query: format!(
-            "repo:{}/{} is:open is:pr author:@me archived:false",
-            config.owner, config.repo
-        ),
-    };
-    let request_body = SearchQuery::build_query(variables);
-    let response_body: Response<search_query::ResponseData> =
-        octocrab::instance()
-            .post("/graphql", Some(&request_body))
-            .await
-            .wrap_err("Searching for open PRs".to_string())?;
-
-    print_pr_info(response_body).ok_or_else(|| eyre!("unexpected error"))
-}
-
-fn print_pr_info(
-    response_body: Response<search_query::ResponseData>,
-) -> Option<()> {
+pub async fn list(forge: &dyn ForgeApi) -> Result<()> {
+    let summaries = forge.list_open_change_requests().await?;
     let term = console::Term::stdout();
-    for pr in response_body.data?.search.nodes? {
-        let Some(crate::commands::list::search_query::SearchQuerySearchNodes::PullRequest(pr)) = pr else {
-            continue;
-        };
-        let dummy: String;
-        let decision = match pr.review_decision {
-            Some(search_query::PullRequestReviewDecision::APPROVED) => {
+    for pr in &summaries {
+        let decision = match &pr.review_status {
+            Some(ReviewStatus::Approved) => {
                 console::style("Accepted").green()
             }
-            Some(
-                search_query::PullRequestReviewDecision::CHANGES_REQUESTED,
-            ) => console::style("Changes Requested").red(),
-            None
-            | Some(search_query::PullRequestReviewDecision::REVIEW_REQUIRED) => {
-                console::style("Pending")
+            Some(ReviewStatus::Rejected) => {
+                console::style("Changes Requested").red()
             }
-            Some(search_query::PullRequestReviewDecision::Other(d)) => {
-                dummy = d;
-                console::style(dummy.as_str())
+            Some(ReviewStatus::Requested) | None => {
+                console::style("Pending")
             }
         };
         term.write_line(&format!(
@@ -65,8 +29,115 @@ fn print_pr_info(
             decision,
             console::style(&pr.title).bold(),
             console::style(&pr.url).dim(),
-        ))
-        .ok()?;
+        ))?;
     }
-    Some(())
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forge::{ForgeApiMock, OpenChangeRequestSummary};
+    use unimock::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_empty_results() {
+        let forge = Unimock::new(
+            ForgeApiMock::list_open_change_requests
+                .some_call(matching!())
+                .returns(Ok(vec![])),
+        );
+        let result = list(&forge).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_renders_approved_pr() {
+        let forge = Unimock::new(
+            ForgeApiMock::list_open_change_requests
+                .some_call(matching!())
+                .returns(Ok(vec![OpenChangeRequestSummary {
+                    number: 42,
+                    title: "feat: add foo".into(),
+                    url: "https://github.com/owner/repo/pull/42".into(),
+                    review_status: Some(ReviewStatus::Approved),
+                }])),
+        );
+        let result = list(&forge).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_renders_rejected_pr() {
+        let forge = Unimock::new(
+            ForgeApiMock::list_open_change_requests
+                .some_call(matching!())
+                .returns(Ok(vec![OpenChangeRequestSummary {
+                    number: 7,
+                    title: "fix: broken thing".into(),
+                    url: "https://github.com/owner/repo/pull/7".into(),
+                    review_status: Some(ReviewStatus::Rejected),
+                }])),
+        );
+        let result = list(&forge).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_renders_pending_pr() {
+        let forge = Unimock::new(
+            ForgeApiMock::list_open_change_requests
+                .some_call(matching!())
+                .returns(Ok(vec![OpenChangeRequestSummary {
+                    number: 1,
+                    title: "chore: update deps".into(),
+                    url: "https://github.com/owner/repo/pull/1".into(),
+                    review_status: None,
+                }])),
+        );
+        let result = list(&forge).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_renders_multiple_prs() {
+        let forge = Unimock::new(
+            ForgeApiMock::list_open_change_requests
+                .some_call(matching!())
+                .returns(Ok(vec![
+                    OpenChangeRequestSummary {
+                        number: 1,
+                        title: "first".into(),
+                        url: "https://github.com/o/r/pull/1".into(),
+                        review_status: Some(ReviewStatus::Approved),
+                    },
+                    OpenChangeRequestSummary {
+                        number: 2,
+                        title: "second".into(),
+                        url: "https://github.com/o/r/pull/2".into(),
+                        review_status: Some(ReviewStatus::Rejected),
+                    },
+                    OpenChangeRequestSummary {
+                        number: 3,
+                        title: "third".into(),
+                        url: "https://github.com/o/r/pull/3".into(),
+                        review_status: Some(ReviewStatus::Requested),
+                    },
+                ])),
+        );
+        let result = list(&forge).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn list_propagates_forge_error() {
+        let forge = Unimock::new(
+            ForgeApiMock::list_open_change_requests
+                .some_call(matching!())
+                .returns(Err(color_eyre::eyre::eyre!("API error"))),
+        );
+        let result = list(&forge).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("API error"));
+    }
 }

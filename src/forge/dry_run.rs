@@ -14,7 +14,7 @@ use git2::Oid;
 use crate::config::MergeMethod;
 use crate::forge::{
     ChangeRequest, ChangeRequestUpdate, ForgeApi, Mergeability,
-    ReviewerRequest, TeamInfo, UserInfo,
+    OpenChangeRequestSummary, ReviewerRequest, TeamInfo, UserInfo,
 };
 use crate::git_remote::PushSpec;
 use crate::message::MessageSectionsMap;
@@ -198,6 +198,40 @@ impl ForgeApi for DryRunForge {
         match &self.inner {
             Some(inner) => inner.get_team(org, team_slug).await,
             None => Ok(None),
+        }
+    }
+
+    async fn list_open_change_requests(
+        &self,
+    ) -> Result<Vec<OpenChangeRequestSummary>> {
+        if let Some(inner) = &self.inner {
+            inner.list_open_change_requests().await
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    async fn get_authenticated_user(&self) -> Result<UserInfo> {
+        if let Some(inner) = &self.inner {
+            inner.get_authenticated_user().await
+        } else {
+            Ok(UserInfo {
+                login: "dry-run-user".into(),
+                name: None,
+                is_collaborator: false,
+            })
+        }
+    }
+
+    async fn get_repo_default_branch(
+        &self,
+        owner: &str,
+        repo: &str,
+    ) -> Result<String> {
+        if let Some(inner) = &self.inner {
+            inner.get_repo_default_branch(owner, repo).await
+        } else {
+            Ok("main".into())
         }
     }
 
