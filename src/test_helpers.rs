@@ -74,7 +74,6 @@ pub fn test_config() -> Config {
         "test-repo".into(),
         "main",
         "spr/main/".into(),
-        "fake-token".into(),
         false,  // require_approval
         false,  // require_test_plan
         false,  // create_draft_prs

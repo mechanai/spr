@@ -82,7 +82,7 @@ impl GitHub {
         let default_branch_oid = self
             .git_remote
             .fetch_branch(self.config.default_branch_name())?;
-        self.git.get_prepared_commits(&self.config, self, default_branch_oid)
+        self.git.get_prepared_commits(self, default_branch_oid)
     }
 
     pub async fn fetch_user(&self, login: &str) -> Result<UserInfo> {
@@ -839,4 +839,72 @@ fn is_not_found(err: &octocrab::Error) -> bool {
             ..
         } if source.status_code == http::StatusCode::NOT_FOUND
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use color_eyre::eyre::Result;
+
+    fn parse_cr_field_test_helper(owner: &str, repo: &str, text: &str) -> Result<Option<u64>> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(None);
+        }
+        let url_regex = lazy_regex::regex!(
+            r#"^https?://github\.com/([\w\-\.]+)/([\w\-\.]+)/pull/(\d+)([/?#].*)?$"#
+        );
+        if let Some(caps) = url_regex.captures(text)
+            && owner == caps.get(1).unwrap().as_str()
+            && repo == caps.get(2).unwrap().as_str()
+        {
+            return Ok(Some(caps.get(3).unwrap().as_str().parse()?));
+        }
+        let bare_regex = lazy_regex::regex!(r#"^#?\s*(\d+)$"#);
+        if let Some(caps) = bare_regex.captures(text) {
+            return Ok(Some(caps.get(1).unwrap().as_str().parse()?));
+        }
+        Ok(None)
+    }
+
+    #[test]
+    fn test_parse_cr_field_empty() {
+        assert_eq!(parse_cr_field_test_helper("acme", "codez", "").unwrap(), None);
+        assert_eq!(parse_cr_field_test_helper("acme", "codez", "   ").unwrap(), None);
+    }
+
+    #[test]
+    fn test_parse_cr_field_bare_number() {
+        assert_eq!(parse_cr_field_test_helper("acme", "codez", "123").unwrap(), Some(123));
+        assert_eq!(parse_cr_field_test_helper("acme", "codez", "   123 ").unwrap(), Some(123));
+        assert_eq!(parse_cr_field_test_helper("acme", "codez", "#123").unwrap(), Some(123));
+        assert_eq!(parse_cr_field_test_helper("acme", "codez", " # 123").unwrap(), Some(123));
+    }
+
+    #[test]
+    fn test_parse_cr_field_github_url() {
+        assert_eq!(
+            parse_cr_field_test_helper("acme", "codez", "https://github.com/acme/codez/pull/123").unwrap(),
+            Some(123)
+        );
+        assert_eq!(
+            parse_cr_field_test_helper("acme", "codez", "https://github.com/acme/codez/pull/123/").unwrap(),
+            Some(123)
+        );
+        assert_eq!(
+            parse_cr_field_test_helper("acme", "codez", "https://github.com/acme/codez/pull/123?x=a").unwrap(),
+            Some(123)
+        );
+        assert_eq!(
+            parse_cr_field_test_helper("acme", "codez", "https://github.com/acme/codez/pull/123#abc").unwrap(),
+            Some(123)
+        );
+    }
+
+    #[test]
+    fn test_parse_cr_field_wrong_repo() {
+        assert_eq!(
+            parse_cr_field_test_helper("acme", "codez", "https://github.com/other/repo/pull/123").unwrap(),
+            None
+        );
+    }
 }

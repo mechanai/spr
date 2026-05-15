@@ -35,7 +35,7 @@ pub async fn sync(
 
     // Get the prepared commits (these are the local commits above the default branch)
     let mut prepared_commits =
-        crate::forge::get_prepared_commits(git, config, forge, new_default_branch_oid)?;
+        crate::forge::get_prepared_commits(git, forge, new_default_branch_oid)?;
 
     if prepared_commits.is_empty() {
         output_essential("already up to date, no local commits")?;

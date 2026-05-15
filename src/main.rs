@@ -252,7 +252,6 @@ pub async fn spr() -> Result<()> {
         github_repo,
         &github_default_branch,
         branch_prefix,
-        github_auth_token.clone(),
         require_approval,
         require_test_plan,
         create_draft_prs,

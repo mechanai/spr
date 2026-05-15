@@ -9,7 +9,6 @@ use color_eyre::eyre::{Error, Result, WrapErr as _, bail, eyre};
 use std::collections::{HashSet, VecDeque};
 
 use crate::{
-    config::Config,
     error::SprError,
     message::{
         MessageSection, MessageSectionsMap, build_commit_message, parse_message,
@@ -64,13 +63,12 @@ impl Git {
 
     pub fn get_prepared_commits(
         &self,
-        config: &Config,
         forge: &dyn crate::forge::ForgeApi,
         default_branch_oid: Oid,
     ) -> Result<Vec<PreparedCommit>> {
         self.get_commit_oids(default_branch_oid)?
             .into_iter()
-            .map(|oid| self.prepare_commit(config, forge, oid))
+            .map(|oid| self.prepare_commit(forge, oid))
             .collect()
     }
 
@@ -244,7 +242,6 @@ impl Git {
 
     pub fn prepare_commit(
         &self,
-        _config: &Config,
         forge: &dyn crate::forge::ForgeApi,
         oid: Oid,
     ) -> Result<PreparedCommit> {

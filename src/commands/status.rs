@@ -28,7 +28,7 @@ pub async fn status(
 ) -> Result<()> {
     let remote_tip = forge.fetch_branch(config.default_branch_name())?;
     let prepared_commits =
-        crate::forge::get_prepared_commits(git, config, forge, remote_tip)?;
+        crate::forge::get_prepared_commits(git, forge, remote_tip)?;
 
     if prepared_commits.is_empty() {
         return Err(eyre!("No commits on branch"));

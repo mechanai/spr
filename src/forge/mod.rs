@@ -254,11 +254,10 @@ pub struct OpenChangeRequestSummary {
 /// Call `forge.fetch_branch()` first to get `remote_tip`, then pass it here.
 pub fn get_prepared_commits(
     git: &Git,
-    config: &crate::config::Config,
     forge: &dyn ForgeApi,
     remote_tip: Oid,
 ) -> Result<Vec<crate::git::PreparedCommit>> {
-    git.get_prepared_commits(config, forge, remote_tip)
+    git.get_prepared_commits(forge, remote_tip)
 }
 
 #[cfg(test)]

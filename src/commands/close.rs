@@ -32,7 +32,7 @@ pub async fn close(
 
     let remote_tip = forge.fetch_branch(config.default_branch_name())?;
     let mut prepared_commits =
-        crate::forge::get_prepared_commits(git, config, forge, remote_tip)?;
+        crate::forge::get_prepared_commits(git, forge, remote_tip)?;
 
     if prepared_commits.is_empty() {
         output("👋", "Branch is empty - nothing to do. Good bye!")?;

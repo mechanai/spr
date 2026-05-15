@@ -104,7 +104,7 @@ pub async fn diff(
     // Look up the commits on the local branch
     let remote_tip = forge.fetch_branch(config.default_branch_name())?;
     let mut prepared_commits =
-        crate::forge::get_prepared_commits(git, config, forge, remote_tip)?;
+        crate::forge::get_prepared_commits(git, forge, remote_tip)?;
 
     // The parent of the first commit in the list is the commit on the default branch that
     // the local branch is based on
