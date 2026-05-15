@@ -7,7 +7,7 @@
 
 use color_eyre::eyre::Result;
 
-use crate::github::GitHubBranch;
+use crate::branch::ForgeBranch;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MergeMethod {
@@ -146,16 +146,16 @@ impl Config {
         None
     }
 
-    pub fn new_github_branch_from_ref(
+    pub fn new_branch_from_ref(
         &self,
-        ghref: &str,
-    ) -> Result<GitHubBranch> {
-        GitHubBranch::new_from_ref(ghref, &self.default_branch)
+        git_ref: &str,
+    ) -> Result<ForgeBranch> {
+        ForgeBranch::from_ref(git_ref, &self.default_branch)
     }
 
     #[must_use]
-    pub fn new_github_branch(&self, branch_name: &str) -> GitHubBranch {
-        GitHubBranch::new_from_branch_name(
+    pub fn new_branch(&self, branch_name: &str) -> ForgeBranch {
+        ForgeBranch::from_branch_name(
             branch_name,
             &self.default_branch,
         )

@@ -150,8 +150,8 @@ impl GitHub {
             .pull_request
             .ok_or_else(|| eyre!("failed to find PR"))?;
 
-        let base = self.config.new_github_branch_from_ref(&pr.base_ref_name)?;
-        let head = self.config.new_github_branch_from_ref(&pr.head_ref_name)?;
+        let base = self.config.new_branch_from_ref(&pr.base_ref_name)?;
+        let head = self.config.new_branch_from_ref(&pr.head_ref_name)?;
 
         let branch_names: Vec<_> =
             [&base, &head].iter().map(|&b| b.branch_name()).collect();
@@ -163,10 +163,10 @@ impl GitHub {
         };
 
         let base_oid = base_oid.ok_or_else(|| {
-            eyre!("{} not found on GitHub", &base.ref_on_github)
+            eyre!("{} not found on GitHub", base.full_ref())
         })?;
         let head_oid = head_oid.ok_or_else(|| {
-            eyre!("{} not found on GitHub", &head.ref_on_github)
+            eyre!("{} not found on GitHub", head.full_ref())
         })?;
 
         let mut sections = parse_message(&pr.body, MessageSection::Summary);
@@ -387,7 +387,7 @@ impl GitHub {
             .pull_request
             .ok_or_else(|| eyre!("failed to find PR"))?;
 
-        let base = self.config.new_github_branch_from_ref(&pr.base_ref_name)?;
+        let base = self.config.new_branch_from_ref(&pr.base_ref_name)?;
 
         Ok(Mergeability {
             base_ref_name: base.branch_name().to_owned(),
@@ -793,62 +793,6 @@ impl ForgeApi for GitHub {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct GitHubBranch {
-    ref_on_github: String,
-    is_default_branch: bool,
-}
-
-impl GitHubBranch {
-    pub fn new_from_ref(ghref: &str, default_branch_name: &str) -> Result<Self> {
-        let ref_on_github = if ghref.starts_with("refs/heads/") {
-            ghref.to_string()
-        } else if ghref.starts_with("refs/") {
-            return Err(eyre!("Ref '{ghref}' does not refer to a branch"));
-        } else {
-            format!("refs/heads/{ghref}")
-        };
-
-        // The branch name is `ref_on_github` with the `refs/heads/` prefix
-        // (length 11) removed
-        let branch_name = &ref_on_github[11..];
-        let is_default_branch = branch_name == default_branch_name;
-
-        Ok(Self {
-            ref_on_github,
-            is_default_branch,
-        })
-    }
-
-    #[must_use]
-    pub fn new_from_branch_name(
-        branch_name: &str,
-        default_branch_name: &str,
-    ) -> Self {
-        Self {
-            ref_on_github: format!("refs/heads/{branch_name}"),
-            is_default_branch: branch_name == default_branch_name,
-        }
-    }
-
-    #[must_use]
-    pub fn on_github(&self) -> &str {
-        &self.ref_on_github
-    }
-
-    #[must_use]
-    pub fn is_default_branch(&self) -> bool {
-        self.is_default_branch
-    }
-
-    #[must_use]
-    pub fn branch_name(&self) -> &str {
-        // The branch name is `ref_on_github` with the `refs/heads/` prefix
-        // (length 11) removed
-        &self.ref_on_github[11..]
-    }
-}
-
 /// Check if an octocrab error is a 404 Not Found response.
 fn is_not_found(err: &octocrab::Error) -> bool {
     matches!(
@@ -858,87 +802,4 @@ fn is_not_found(err: &octocrab::Error) -> bool {
             ..
         } if source.status_code == http::StatusCode::NOT_FOUND
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_new_from_ref_with_branch_name() {
-        let r = GitHubBranch::new_from_ref("foo", "masterbranch").unwrap();
-        assert_eq!(r.on_github(), "refs/heads/foo");
-        assert_eq!(r.branch_name(), "foo");
-        assert!(!r.is_default_branch());
-    }
-
-    #[test]
-    fn test_new_from_ref_with_default_branch_name() {
-        let r =
-            GitHubBranch::new_from_ref("masterbranch", "masterbranch").unwrap();
-        assert_eq!(r.on_github(), "refs/heads/masterbranch");
-        assert_eq!(r.branch_name(), "masterbranch");
-        assert!(r.is_default_branch());
-    }
-
-    #[test]
-    fn test_new_from_ref_with_ref_name() {
-        let r = GitHubBranch::new_from_ref("refs/heads/foo", "masterbranch")
-            .unwrap();
-        assert_eq!(r.on_github(), "refs/heads/foo");
-        assert_eq!(r.branch_name(), "foo");
-        assert!(!r.is_default_branch());
-    }
-
-    #[test]
-    fn test_new_from_ref_with_default_branch_ref_name() {
-        let r = GitHubBranch::new_from_ref(
-            "refs/heads/masterbranch",
-            "masterbranch",
-        )
-        .unwrap();
-        assert_eq!(r.on_github(), "refs/heads/masterbranch");
-        assert_eq!(r.branch_name(), "masterbranch");
-        assert!(r.is_default_branch());
-    }
-
-    #[test]
-    fn test_new_from_branch_name() {
-        let r = GitHubBranch::new_from_branch_name("foo", "masterbranch");
-        assert_eq!(r.on_github(), "refs/heads/foo");
-        assert_eq!(r.branch_name(), "foo");
-        assert!(!r.is_default_branch());
-    }
-
-    #[test]
-    fn test_new_from_default_branch_name() {
-        let r =
-            GitHubBranch::new_from_branch_name("masterbranch", "masterbranch");
-        assert_eq!(r.on_github(), "refs/heads/masterbranch");
-        assert_eq!(r.branch_name(), "masterbranch");
-        assert!(r.is_default_branch());
-    }
-
-    #[test]
-    fn test_new_from_ref_with_edge_case_ref_name() {
-        let r = GitHubBranch::new_from_ref(
-            "refs/heads/refs/heads/foo",
-            "masterbranch",
-        )
-        .unwrap();
-        assert_eq!(r.on_github(), "refs/heads/refs/heads/foo");
-        assert_eq!(r.branch_name(), "refs/heads/foo");
-        assert!(!r.is_default_branch());
-    }
-
-    #[test]
-    fn test_new_from_edge_case_branch_name() {
-        let r = GitHubBranch::new_from_branch_name(
-            "refs/heads/foo",
-            "masterbranch",
-        );
-        assert_eq!(r.on_github(), "refs/heads/refs/heads/foo");
-        assert_eq!(r.branch_name(), "refs/heads/foo");
-        assert!(!r.is_default_branch());
-    }
 }

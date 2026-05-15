@@ -15,6 +15,7 @@
     clippy::module_name_repetitions
 )]
 
+pub mod branch;
 pub mod commands;
 pub mod config;
 pub mod error;
