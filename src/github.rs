@@ -82,7 +82,7 @@ impl GitHub {
         let default_branch_oid = self
             .git_remote
             .fetch_branch(self.config.default_branch_name())?;
-        self.git.get_prepared_commits(&self.config, default_branch_oid)
+        self.git.get_prepared_commits(&self.config, self, default_branch_oid)
     }
 
     pub async fn fetch_user(&self, login: &str) -> Result<UserInfo> {

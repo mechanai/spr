@@ -28,7 +28,7 @@ pub async fn check(
 
     let remote_tip = forge.fetch_branch(config.default_branch_name())?;
     let prepared_commits =
-        crate::forge::get_prepared_commits(git, config, remote_tip)?;
+        crate::forge::get_prepared_commits(git, config, forge, remote_tip)?;
 
     let head_commit = prepared_commits
         .last()
@@ -153,7 +153,7 @@ mod tests {
 
         let opts = CheckOptions { cherry_pick: false };
         let result = check(opts, &git, &forge, &config).await;
-        assert!(result.is_ok(), "check should pass with test plan: {result:?}");
+        assert!(result.is_ok(), "check should pass: {result:?}");
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -165,7 +165,15 @@ mod tests {
         let git = test_repo.git();
         let config = test_config();
 
-        let forge = Unimock::new(base_clauses(test_repo.base_oid));
+        let forge = Unimock::new((
+            base_clauses(test_repo.base_oid),
+            ForgeApiMock::parse_cr_field
+                .some_call(matching!(_))
+                .returns(Ok(Some(99))),
+            ForgeApiMock::change_request_url
+                .some_call(matching!(99))
+                .returns("https://github.com/test-owner/test-repo/pull/99".to_string()),
+        ));
 
         let opts = CheckOptions { cherry_pick: false };
         let result = check(opts, &git, &forge, &config).await;

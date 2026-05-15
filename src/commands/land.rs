@@ -45,7 +45,7 @@ pub async fn land(
     loop {
         let remote_tip = forge.fetch_branch(config.default_branch_name())?;
         let prepared_commits =
-            crate::forge::get_prepared_commits(git, config, remote_tip)?;
+            crate::forge::get_prepared_commits(git, config, forge, remote_tip)?;
         if prepared_commits.is_empty() {
             break;
         }
@@ -98,7 +98,7 @@ async fn land_one(
     git.check_no_uncommitted_changes()?;
     let remote_tip = forge.fetch_branch(config.default_branch_name())?;
     let mut prepared_commits =
-        crate::forge::get_prepared_commits(git, config, remote_tip)?;
+        crate::forge::get_prepared_commits(git, config, forge, remote_tip)?;
 
     let based_on_unlanded_commits = prepared_commits.len() > 1;
 

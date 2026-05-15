@@ -65,11 +65,12 @@ impl Git {
     pub fn get_prepared_commits(
         &self,
         config: &Config,
+        forge: &dyn crate::forge::ForgeApi,
         default_branch_oid: Oid,
     ) -> Result<Vec<PreparedCommit>> {
         self.get_commit_oids(default_branch_oid)?
             .into_iter()
-            .map(|oid| self.prepare_commit(config, oid))
+            .map(|oid| self.prepare_commit(config, forge, oid))
             .collect()
     }
 
@@ -243,7 +244,8 @@ impl Git {
 
     pub fn prepare_commit(
         &self,
-        config: &Config,
+        _config: &Config,
+        forge: &dyn crate::forge::ForgeApi,
         oid: Oid,
     ) -> Result<PreparedCommit> {
         let commit = self.repo.find_commit(oid)?;
@@ -265,12 +267,14 @@ impl Git {
 
         let pull_request_number = message
             .get(&MessageSection::PullRequest)
-            .and_then(|text| config.parse_pull_request_field(text));
+            .map(|text| forge.parse_cr_field(text))
+            .transpose()?
+            .flatten();
 
         if let Some(number) = pull_request_number {
             message.insert(
                 MessageSection::PullRequest,
-                config.pull_request_url(number),
+                forge.change_request_url(number),
             );
         } else {
             message.remove(&MessageSection::PullRequest);
