@@ -183,7 +183,7 @@ impl GitHub {
 
         sections.insert(
             MessageSection::PullRequest,
-            self.config.pull_request_url(number),
+            self.change_request_url(number),
         );
 
         let reviewers: HashMap<String, ReviewStatus> = pr
@@ -790,6 +790,43 @@ impl ForgeApi for GitHub {
 
     fn change_request_term_full(&self) -> &'static str {
         "Pull Request"
+    }
+
+    fn change_request_url(&self, number: u64) -> String {
+        format!(
+            "https://github.com/{}/{}/pull/{}",
+            self.config.owner, self.config.repo, number
+        )
+    }
+
+    fn short_cr_ref(&self, number: u64) -> String {
+        format!("{}/{}#{}", self.config.owner, self.config.repo, number)
+    }
+
+    fn parse_cr_field(&self, text: &str) -> Result<Option<u64>> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(None);
+        }
+
+        // GitHub URL pattern
+        let url_regex = lazy_regex::regex!(
+            r#"^https?://github\.com/([\w\-\.]+)/([\w\-\.]+)/pull/(\d+)([/?#].*)?$"#
+        );
+        if let Some(caps) = url_regex.captures(text)
+            && self.config.owner == caps.get(1).unwrap().as_str()
+            && self.config.repo == caps.get(2).unwrap().as_str()
+        {
+            return Ok(Some(caps.get(3).unwrap().as_str().parse()?));
+        }
+
+        // Bare #NNN or NNN
+        let bare_regex = lazy_regex::regex!(r#"^#?\s*(\d+)$"#);
+        if let Some(caps) = bare_regex.captures(text) {
+            return Ok(Some(caps.get(1).unwrap().as_str().parse()?));
+        }
+
+        Ok(None)
     }
 }
 

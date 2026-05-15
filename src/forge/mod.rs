@@ -207,6 +207,18 @@ pub trait ForgeApi {
     fn change_request_term(&self) -> &str;
     fn change_request_term_full(&self) -> &str;
 
+    /// URL for a change request (e.g. `https://github.com/owner/repo/pull/42`).
+    fn change_request_url(&self, number: u64) -> String;
+
+    /// Short reference for a change request (e.g. `owner/repo#42`).
+    fn short_cr_ref(&self, number: u64) -> String;
+
+    /// Parse a commit-message field to extract a change-request number.
+    ///
+    /// Returns `Ok(Some(number))` for a valid CR reference,
+    /// `Ok(None)` for absent, empty, or unrecognized input.
+    fn parse_cr_field(&self, text: &str) -> Result<Option<u64>>;
+
     /// Whether this forge is in dry-run mode (no writes performed).
     fn is_dry_run(&self) -> bool {
         false

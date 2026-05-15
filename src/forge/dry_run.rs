@@ -288,6 +288,30 @@ impl ForgeApi for DryRunForge {
         &self.cr_term_full
     }
 
+    fn change_request_url(&self, number: u64) -> String {
+        if let Some(inner) = &self.inner {
+            inner.change_request_url(number)
+        } else {
+            format!("https://example.com/pull/{number}")
+        }
+    }
+
+    fn short_cr_ref(&self, number: u64) -> String {
+        if let Some(inner) = &self.inner {
+            inner.short_cr_ref(number)
+        } else {
+            format!("dry-run#{number}")
+        }
+    }
+
+    fn parse_cr_field(&self, text: &str) -> Result<Option<u64>> {
+        if let Some(inner) = &self.inner {
+            inner.parse_cr_field(text)
+        } else {
+            Ok(None)
+        }
+    }
+
     fn is_dry_run(&self) -> bool {
         true
     }
